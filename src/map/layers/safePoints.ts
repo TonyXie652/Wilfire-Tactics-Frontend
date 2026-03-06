@@ -1,0 +1,104 @@
+import { ScatterplotLayer } from "@deck.gl/layers";
+import type { Layer } from "@deck.gl/core";
+import type { SafePoint } from "../../app/types";
+
+type Options = {
+  selectedSafePointId?: string | null;
+  onPickSafePoint?: (safePointId: string) => void;
+  timeMs?: number;
+
+  radiusMeters?: number;
+  ringExtraMeters?: number;
+  ringPeriodMs?: number;
+};
+
+function hash01(str: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0) / 4294967296;
+}
+
+export function makeSafePointsLayer(
+  safePoints: SafePoint[],
+  opts: Options = {}
+): Layer[] {
+  const {
+    selectedSafePointId = null,
+    onPickSafePoint,
+    timeMs = 0,
+    radiusMeters = 30,
+    ringExtraMeters = 90,
+    ringPeriodMs = 1400,
+  } = opts;
+
+  const colorNormal: [number, number, number, number] = [34, 197, 94, 235];
+  const colorSelected: [number, number, number, number] = [74, 222, 128, 245];
+
+  const t = ringPeriodMs > 0 ? (timeMs % ringPeriodMs) / ringPeriodMs : 0;
+
+  const isSelected = (d: SafePoint) =>
+    !!selectedSafePointId && d.id === selectedSafePointId;
+
+  const getRingRadius = (d: SafePoint) => {
+    const phase = hash01(d.id) * 0.35;
+    const tt = (t + phase) % 1;
+    return radiusMeters + ringExtraMeters * tt;
+  };
+
+  const getRingAlpha = (d: SafePoint) => {
+    const phase = hash01(d.id) * 0.35;
+    const tt = (t + phase) % 1;
+    const a = Math.max(0, 1 - tt);
+    return Math.round(180 * a);
+  };
+
+  const ringLayer = new ScatterplotLayer<SafePoint>({
+    id: "safe-points-ring",
+    data: safePoints,
+    getPosition: (d) => [d.lng, d.lat, 6],
+    radiusUnits: "meters",
+    radiusMinPixels: 3,
+    getRadius: getRingRadius,
+    filled: false,
+    stroked: true,
+    lineWidthUnits: "pixels",
+    getLineWidth: (d) => (isSelected(d) ? 3 : 2),
+    getLineColor: (d) =>
+      isSelected(d)
+        ? ([255, 255, 255, getRingAlpha(d)] as any)
+        : ([34, 197, 94, getRingAlpha(d)] as any),
+    updateTriggers: {
+      getRadius: timeMs,
+      getLineColor: timeMs,
+    },
+    pickable: false,
+    parameters: { depthTest: false } as any,
+  });
+
+  const innerLayer = new ScatterplotLayer<SafePoint>({
+    id: "safe-points-inner",
+    data: safePoints,
+    getPosition: (d) => [d.lng, d.lat, 8],
+    radiusUnits: "meters",
+    radiusMinPixels: 5,
+    getRadius: (d) => (isSelected(d) ? radiusMeters * 1.35 : radiusMeters),
+    getFillColor: (d) => (isSelected(d) ? colorSelected : colorNormal),
+    stroked: true,
+    getLineColor: () => [255, 255, 255, 220],
+    lineWidthMinPixels: 2,
+    pickable: true,
+    autoHighlight: true,
+    highlightColor: [255, 255, 255, 90],
+    parameters: { depthTest: false } as any,
+    onClick: (info) => {
+      const obj = info.object as SafePoint | null;
+      if (!obj) return;
+      onPickSafePoint?.(obj.id);
+    },
+  });
+
+  return [ringLayer, innerLayer];
+}
