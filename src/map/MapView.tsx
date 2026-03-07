@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import mapboxgl from "mapbox-gl";
+import "mapbox-gl/dist/mapbox-gl.css";
 import { MapboxOverlay } from "@deck.gl/mapbox";
 import type { Layer } from "@deck.gl/core";
 
@@ -63,7 +64,6 @@ export function MapView({
       map.on("click", (e) => {
         const lng = e.lngLat.lng;
         const lat = e.lngLat.lat;
-
         console.log("点击位置经纬度:", lng, lat);
       });
 
@@ -91,8 +91,9 @@ export function MapView({
             minzoom: 15,
             filter: ["==", "extrude", "true"],
             paint: {
-              "fill-extrusion-color": "#909396",
-              "fill-extrusion-opacity": 0.5,
+              // 【核心修改】：压暗建筑颜色，提高不透明度，打造深邃的夜间环境
+              "fill-extrusion-color": "#12141a", // 非常深的藏青/炭灰色
+              "fill-extrusion-opacity": 0.85,    // 更加实体化，不那么透明
               "fill-extrusion-height": ["get", "height"],
               "fill-extrusion-base": ["get", "min_height"],
             },

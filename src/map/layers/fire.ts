@@ -1,5 +1,4 @@
-import { GridCellLayer } from "@deck.gl/layers";
-import { ScenegraphLayer } from "@deck.gl/mesh-layers";
+import { ScatterplotLayer } from "@deck.gl/layers";
 import type { Layer } from "@deck.gl/core";
 import type { FireCell } from "../../app/types";
 
@@ -7,40 +6,42 @@ type Options = {
   visible?: boolean;
   pickable?: boolean;
   onPickFireCell?: (cell: FireCell) => void;
+  pulseRatio?: number; 
 };
 
-function getFireColor(intensity: number): [number, number, number, number] {
+/**
+ * 优化后的颜色逻辑：
+ * 1. 降低了最高强度的 Alpha 值，确保火区具有通透感。
+ * 2. 采用了阶梯式的透明度：强度越高，颜色越深，但始终保持透明。
+ */
+function getFireCoreColor(intensity: number): [number, number, number, number] {
   if (intensity <= 0) return [0, 0, 0, 0];
-  if (intensity === 1) return [255, 220, 0, 100];
-  if (intensity === 2) return [255, 140, 0, 130];
-  if (intensity === 3) return [255, 60, 0, 160];
-  return [180, 0, 0, 190];
+  
+  // 强度 1：亮橙黄 (Alpha: 140) - 比较轻盈
+  if (intensity === 1) return [255, 200, 50, 140]; 
+  
+  // 强度 2：鲜橙色 (Alpha: 160)
+  if (intensity === 2) return [255, 120, 0, 160];  
+  
+  // 强度 3：深红色 (Alpha: 175)
+  if (intensity === 3) return [210, 30, 0, 175];   
+  
+  // 强度 4：极深红 (Alpha: 190) - 依然保留约 25% 的透明空间
+  return [150, 0, 0, 190]; 
 }
 
-function getFireElevation(intensity: number): number {
-  if (intensity <= 0) return 0;
-  if (intensity === 1) return 7;
-  if (intensity === 2) return 14;
-  if (intensity === 3) return 20;
-  return 60;
+function getFireCoreRadius(intensity: number, baseSize: number): number {
+  if (intensity >= 4) return baseSize * 0.75; 
+  if (intensity === 3) return baseSize * 0.55; 
+  if (intensity === 2) return baseSize * 0.45; 
+  if (intensity === 1) return baseSize * 0.35; 
+  return 0;
 }
 
-// 你的 fire cell position 更像格子左下角，所以往中心挪一点
 function getCellCenter(position: [number, number]): [number, number] {
   const [lng, lat] = position;
-
-  // 如果后面发现偏左/偏下，再继续微调这两个值
-  const lngOffset = 0.00055;
-  const latOffset = 0.00022;
-
-  return [lng + lngOffset, lat + latOffset];
-}
-
-function getFireModelScale(intensity: number): number {
-  if (intensity >= 4) return 13;
-  if (intensity === 3) return 10;
-  if (intensity === 2) return 7;
-  return 0;
+  // 依然保留微调偏移，确保圆心对齐
+  return [lng + 0.00055, lat + 0.00022];
 }
 
 export function makeFireLayer(
@@ -51,80 +52,44 @@ export function makeFireLayer(
     visible = true,
     pickable = true,
     onPickFireCell,
+    pulseRatio = 1.0, 
   } = opts;
 
   const cellSize = fireCells.length > 0 ? fireCells[0].size : 80;
+  const activeFireCells = fireCells.filter((c) => c.intensity > 0);
 
-  const gridLayer = new GridCellLayer<FireCell>({
-    id: "fire-grid-layer",
-    data: fireCells,
+  const fireLayer = new ScatterplotLayer<FireCell>({
+    id: "fire-scatterplot-tactical-v2",
+    data: activeFireCells,
     visible,
     pickable,
 
-    extruded: true,
-    cellSize,
-    coverage: 0.95,
-
-    getPosition: (d) => d.position,
-    getFillColor: (d) => getFireColor(d.intensity),
-    getLineColor: [255, 255, 255, 80],
-    getElevation: (d) => getFireElevation(d.intensity),
+    getPosition: (d) => getCellCenter(d.position),
+    getFillColor: (d) => getFireCoreColor(d.intensity),
+    getRadius: (d) => getFireCoreRadius(d.intensity, cellSize) * pulseRatio,
+    
+    radiusUnits: 'meters',
+    stroked: false,
 
     autoHighlight: true,
-    highlightColor: [255, 255, 255, 80],
+    highlightColor: [255, 255, 255, 150],
 
     onClick: (info) => {
-      if (info.object && onPickFireCell) {
-        onPickFireCell(info.object);
-      }
-    },
-  });
-
-  const flameCells = fireCells.filter((c) => c.intensity >= 3);
-
-  const fireModelLayer = new ScenegraphLayer<FireCell>({
-    id: "fire-model-layer",
-    data: flameCells,
-    visible,
-    pickable: false,
-
-    scenegraph: "/models/fire.glb",
-
-    getPosition: (d) => {
-      const [lng, lat] = getCellCenter(d.position);
-
-      // 控制火焰在格子上方的高度
-      const z = getFireElevation(d.intensity) + 18;
-
-      return [lng, lat, z];
-    },
-
-    getScale: (d) => {
-      const s = getFireModelScale(d.intensity);
-      return [s, s, s];
-    },
-
-    // 如果模型方向不对，再改这里
-    getOrientation: () => [0, 0, 90],
-
-    
-    sizeScale: 1,
-    _lighting: "flat",
-
-    _animations: {
-      "*": { speed: 1 }
+      if (info.object && onPickFireCell) onPickFireCell(info.object);
     },
 
     parameters: {
-      depthWriteEnabled: true,
-      depthCompare: "less-equal",
-    },
+      depthWriteEnabled: false,
+      depthCompare: "always",
+      blend: true,
+      // 使用标准混合，透明度生效的关键
+    } as any,
 
     updateTriggers: {
-      getScale: flameCells.map((c) => c.intensity),
-      getPosition: flameCells.map((c) => c.intensity),
+      getRadius: [pulseRatio, activeFireCells.map(c => c.intensity)],
+      getFillColor: [activeFireCells.map(c => c.intensity)],
     },
   });
 
-  return [gridLayer, fireModelLayer];
+  return [fireLayer];
 }
