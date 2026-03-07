@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ScatterplotLayer } from "@deck.gl/layers";
 import { MapView } from "../map/MapView";
 import { makeRoadLayers } from "../map/layers/roads";
 import { makeAgentsLayer } from "../map/layers/agents";
@@ -441,7 +440,6 @@ export default function SimulationPage() {
   const [timeMs, setTimeMs] = useState(() => performance.now());
   const [fireCells, setFireCells] = useState<FireCell[]>(initialFire);
   const [isPaused, setIsPaused] = useState(false);
-  const [testNodeId, setTestNodeId] = useState("");
 
   // ── 风力参数（后续接入 UI 滑块控制） ──
   const [wind] = useState<WindConfig>({
@@ -479,8 +477,6 @@ export default function SimulationPage() {
     return () => window.clearInterval(timer);
   }, [isPaused, wind]);
 
-  const testNode = useMemo(() => scenario.nodes.find((n) => n.id === testNodeId), [testNodeId]);
-
   // 【核心修改点】：在这里计算脉冲，并传给火灾图层
   const layers = useMemo(() => {
 
@@ -493,22 +489,8 @@ export default function SimulationPage() {
       ...makeFireLayer(fireCells, { pulseRatio }),
       makeAgentsLayer(agents),
       ...makeSafePointsLayer(scenario.safePoints, { timeMs }),
-      ...(testNode
-        ? [
-          new ScatterplotLayer({
-            id: "test-node-highlight",
-            data: [testNode],
-            getPosition: (d) => [d.lng, d.lat, 10],
-            getFillColor: [0, 255, 255, 255], // 醒目的青色
-            getRadius: 20,
-            radiusUnits: "meters",
-            radiusMinPixels: 15,
-            parameters: { depthTest: false } as any,
-          }),
-        ]
-        : []),
     ];
-  }, [timeMs, fireCells, testNode]);
+  }, [timeMs, fireCells]);
 
   return (
     <div style={{ height: "100vh", width: "100vw", position: "relative" }}>
@@ -543,21 +525,6 @@ export default function SimulationPage() {
           alignItems: "center"
         }}
       >
-        <input
-          type="text"
-          placeholder="搜索 Node ID (如 n25)"
-          value={testNodeId}
-          onChange={(e) => setTestNodeId(e.target.value.trim())}
-          style={{
-            padding: "8px 12px",
-            fontSize: "14px",
-            borderRadius: "6px",
-            border: "1px solid #444",
-            background: "rgba(0,0,0,0.7)",
-            color: "white",
-            outline: "none"
-          }}
-        />
         <button
           onClick={() => setIsPaused((p) => !p)}
           style={{
