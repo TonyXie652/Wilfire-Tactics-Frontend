@@ -1,25 +1,46 @@
 import type { FireCell, WindConfig } from "../app/types";
 
+/** Line segment intersection test (2D). */
+function segmentsIntersect(
+  p1: [number, number], p2: [number, number],
+  p3: [number, number], p4: [number, number],
+): boolean {
+  const d1x = p2[0] - p1[0], d1y = p2[1] - p1[1];
+  const d2x = p4[0] - p3[0], d2y = p4[1] - p3[1];
+  const cross = d1x * d2y - d1y * d2x;
+  if (Math.abs(cross) < 1e-14) return false; // parallel
+  const dx = p3[0] - p1[0], dy = p3[1] - p1[1];
+  const t = (dx * d2y - dy * d2x) / cross;
+  const u = (dx * d1y - dy * d1x) / cross;
+  return t >= 0 && t <= 1 && u >= 0 && u <= 1;
+}
+
 const MAX_INTENSITY = 4;
 const SPREAD_THRESHOLD = 2;
 
 const LNG_STEP = 0.00105;
 const LAT_STEP = 0.00055;
-// 间距彻底拉大，让火区之间有明显的间隔
 const MIN_DISTANCE_THRESHOLD = 0.0006;
 
 // --- 节奏平衡配置 ---
-/**
- * 【下调】升级概率：从 0.08 降至 0.02
- * 让升级速度变慢，适合观察模拟演变。
- */
-const BASE_GROWTH_CHANCE = 0.2; // 继续大幅下调生长速度0.04
+const BASE_GROWTH_CHANCE = 0.2;
 
 /**
- * 【下调】扩散概率：从 0.09 降至 0.04
- * 配合变慢的升级速度，火势蔓延变得更稳定。
+ * Spread chance per tick. At intensity 2: 30%, intensity 3: 60%, intensity 4: 90%.
+ * Reduced from 0.6 so high-intensity fire doesn't guarantee spread every tick.
  */
-const BASE_SPREAD_CHANCE = 0.6;
+const BASE_SPREAD_CHANCE = 0.3;
+
+/**
+ * Ticks before a cell starts decaying. At 1s/tick this is ~20 seconds of burning.
+ * After this age, the cell loses intensity instead of gaining it.
+ */
+const BURNOUT_AGE = 20;
+
+/**
+ * Probability per tick that a burning-out cell loses 1 intensity level.
+ */
+const BASE_DECAY_CHANCE = 0.2;
 
 const DIRECTIONS = [
   [1, 0], [-1, 0], [0, 1], [0, -1],
@@ -32,20 +53,36 @@ function getDist(p1: [number, number], p2: [number, number]): number {
   return Math.sqrt(dx * dx + dy * dy);
 }
 
+/** Fire spread probability multiplier when crossing a roadblock. */
+const ROADBLOCK_FIRE_PENALTY = 0.1;
+
 export function stepFireSpread(
   fireCells: FireCell[],
-  wind?: WindConfig
+  wind?: WindConfig,
+  blockedSegments: Array<[[number, number], [number, number]]> = [],
 ): FireCell[] {
-  // 1. 内部升级逻辑 (慢节奏演化)
-  const activeCells = fireCells.map(cell => {
+  // 1. Growth / burnout logic
+  const activeCells: FireCell[] = [];
+  for (const cell of fireCells) {
     const nextCell = { ...cell, age: (cell.age ?? 0) + 1 };
 
-    // 升级概率：取消了之前的动态加成，改为纯随机，让升级变得“佛系”
-    if (Math.random() < BASE_GROWTH_CHANCE && nextCell.intensity < MAX_INTENSITY) {
-      nextCell.intensity += 1;
+    if (nextCell.age >= BURNOUT_AGE) {
+      // Cell is burning out: decay intensity
+      if (Math.random() < BASE_DECAY_CHANCE) {
+        nextCell.intensity -= 1;
+      }
+    } else {
+      // Cell is still growing
+      if (Math.random() < BASE_GROWTH_CHANCE && nextCell.intensity < MAX_INTENSITY) {
+        nextCell.intensity += 1;
+      }
     }
-    return nextCell;
-  });
+
+    // Remove fully extinguished cells
+    if (nextCell.intensity > 0) {
+      activeCells.push(nextCell);
+    }
+  }
 
   const nextFireList = [...activeCells];
 
@@ -85,9 +122,17 @@ export function stepFireSpread(
     if (Math.random() > finalSpreadChance) continue;
 
     const neighborPos: [number, number] = [
-      cell.position[0] + dir[0] * LNG_STEP * 0.65, // 拉开更大的步长，火点生得更远
+      cell.position[0] + dir[0] * LNG_STEP * 0.65,
       cell.position[1] + dir[1] * LAT_STEP * 0.65
     ];
+
+    // Check if this spread crosses a roadblock — if so, greatly reduce chance
+    if (blockedSegments.length > 0) {
+      const crossesBlock = blockedSegments.some((seg) =>
+        segmentsIntersect(cell.position, neighborPos, seg[0], seg[1])
+      );
+      if (crossesBlock && Math.random() > ROADBLOCK_FIRE_PENALTY) continue;
+    }
 
     const jitter = 0.02; // 极小的 jitter 偏差，完全杜绝越出圆圈
     const finalPos: [number, number] = [

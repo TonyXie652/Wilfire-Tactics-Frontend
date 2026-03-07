@@ -1,56 +1,81 @@
 // src/app/types.ts
 
 export type Node = {
-  id: string
-  lng: number
-  lat: number
-}
+  id: string;
+  lng: number;
+  lat: number;
+};
 
 export type Edge = {
-  id: string
-  from: string
-  to: string
-  baseCost?: number
-}
+  id: string;
+  from: string;
+  to: string;
+  baseCost?: number; // meters; if omitted, computed from Haversine at graph build time
+};
 
 export type SafePoint = {
-  id: string
-  lng: number
-  lat: number
-}
+  id: string;
+  lng: number;
+  lat: number;
+};
 
 export type Scenario = {
-  nodes: Node[]
-  edges: Edge[]
-  safePoints: SafePoint[]
-}
+  nodes: Node[];
+  edges: Edge[];
+  safePoints: SafePoint[];
+};
+
+export type AgentStatus = "idle" | "moving" | "safe" | "dead";
 
 export type Agent = {
   id: string;
   lng: number;
   lat: number;
-  kind: "resident" | "guide" | "truck" | "roadblock"; // truck 可选，但你后面想放消防车就很方便
-  status?: "moving" | "safe" | "dead";
+  kind: "resident" | "guide" | "truck" | "roadblock";
+  status?: AgentStatus;
+
+  // ── movement ──────────────────────────────────────────────────────────────
+  speed?: number;           // lng/lat units per tick (≈ 4m/tick for resident)
+  currentNodeId?: string;   // road-graph node the agent is currently at / heading to
+
+  // planned path ahead (used for visualisation; populated from flow field)
+  path?: string[];
+  pathIndex?: number;
+
+  // historical trail for replay / visualisation
+  pathHistory?: [number, number][];
+
+  // ── following & targeting ─────────────────────────────────────────────────
+  followingGuideId?: string;  // ID of guide being followed (if any)
+  targetSafePointId?: string; // safe point this agent is routing toward
+
+  // ── timing ───────────────────────────────────────────────────────────────
+  reactionDelay?: number;     // ticks after fire appears before agent reacts
+  ticksSinceStart?: number;   // global tick counter at last update
+  spawnTick?: number;         // global tick when this agent was created
+
+  // ── state flags ──────────────────────────────────────────────────────────
+  panickedAt?: number;        // tick of most recent panic event (for speed boost)
+};
+
+/** Decision produced by the guide AI each N ticks. */
+export type GuideDecision = {
+  guideId: string;
+  targetSafePointId: string;
+  reason?: string;
 };
 
 export type FireCell = {
   id: string;
-  position: [number, number];
-  intensity: number;
-  size: number;
+  position: [number, number]; // [lng, lat]
+  intensity: number;          // 0–3+
+  size: number;               // metres
   age?: number;
   activatedAt?: number;
-}; // intensity 0..1
+};
 
-/**
- * 风力配置，供用户在 UI 中实时调整。
- *
- * angleDeg - 风向角度 (0=北, 90=东, 180=南, 270=西)
- * speed - 风速 (0~1 的归一化系数，用来放大迎风面的蔓延概率)
- * baseSpreadChance - 基础蔓延概率，方便 UI 调节整体难度
- */
 export type WindConfig = {
-  angleDeg: number;
-  speed: number;
-  baseSpreadChance: number;
+  angleDeg: number;         // 0=N, 90=E, 180=S, 270=W
+  speed: number;            // 0–1 normalised coefficient
+  baseSpreadChance: number; // base spread probability per tick
 };

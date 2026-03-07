@@ -59,7 +59,6 @@ export function MapView({
       layers,
       onClick: (info) => {
         if (info.coordinate) {
-          console.log("DeckGL clicked at lng/lat:", info.coordinate[0], info.coordinate[1]);
           onClickRef.current?.(info.coordinate[0], info.coordinate[1]);
         }
       }
@@ -72,15 +71,6 @@ export function MapView({
         pitch: 40,
         bearing: -35,
         duration: 2000,
-      });
-
-      map.on("click", (e) => {
-        // Fallback for native mapbox click if DeckGL doesn't catch it
-        const lng = e.lngLat.lng;
-        const lat = e.lngLat.lat;
-
-        console.log("Mapbox native click at lng/lat:", lng, lat);
-        onClickRef.current?.(lng, lat);
       });
 
       const styleLayers = map.getStyle().layers;

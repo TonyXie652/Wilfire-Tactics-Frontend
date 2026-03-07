@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { MapView } from "../map/MapView";
 import { Toolbar } from "../ui/Toolbar";
@@ -7,7 +7,66 @@ import { makeAgentsLayer } from "../map/layers/agents";
 import { makeFireLayer } from "../map/layers/fire";
 import { makeSafePointsLayer } from "../map/layers/safePoints";
 import { stepFireSpread } from "../stimulation/fireSpread";
-import type { Scenario, Agent, FireCell, WindConfig } from "../app/types";
+import type { Scenario, Agent, FireCell, WindConfig, GuideDecision } from "../app/types";
+import {
+  stepAgents,
+  createResident,
+  createGuide,
+  resetEngineCache,
+} from "../sim/agentEngine";
+import { getGuideDecisions, resetGuideSessions } from "../sim/guideAgent";
+
+/** Point-to-segment distance in lng/lat units. */
+function pointToSegmentDist(
+  px: number, py: number,
+  ax: number, ay: number,
+  bx: number, by: number,
+): number {
+  const dx = bx - ax, dy = by - ay;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq === 0) return Math.sqrt((px - ax) ** 2 + (py - ay) ** 2);
+  const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lenSq));
+  return Math.sqrt((px - (ax + t * dx)) ** 2 + (py - (ay + t * dy)) ** 2);
+}
+
+/** Max lng/lat distance to snap to an edge (~60m at this latitude). */
+const EDGE_SNAP_THRESHOLD = 0.0006;
+
+/** Find the edge ID closest to the given click point, within snap threshold. */
+function findNearestEdge(lng: number, lat: number, sc: typeof scenario): string | null {
+  const nodeMap = new Map(sc.nodes.map((n) => [n.id, n]));
+  let bestId: string | null = null;
+  let bestDist = EDGE_SNAP_THRESHOLD;
+  for (const edge of sc.edges) {
+    const a = nodeMap.get(edge.from);
+    const b = nodeMap.get(edge.to);
+    if (!a || !b) continue;
+    const d = pointToSegmentDist(lng, lat, a.lng, a.lat, b.lng, b.lat);
+    if (d < bestDist) { bestDist = d; bestId = edge.id; }
+  }
+  return bestId;
+}
+
+/** Build geometric segments for all blocked edges (for fire spread check). */
+function buildBlockedSegments(
+  blockedEdgeIds: Set<string>,
+  sc: typeof scenario,
+): Array<[[number, number], [number, number]]> {
+  const nodeMap = new Map(sc.nodes.map((n) => [n.id, n]));
+  const segs: Array<[[number, number], [number, number]]> = [];
+  for (const edge of sc.edges) {
+    if (!blockedEdgeIds.has(edge.id)) continue;
+    const a = nodeMap.get(edge.from);
+    const b = nodeMap.get(edge.to);
+    if (a && b) segs.push([[a.lng, a.lat], [b.lng, b.lat]]);
+  }
+  return segs;
+}
+
+/** Agent simulation tick interval (ms). */
+const AGENT_TICK_MS = 500;
+/** How many agent ticks between AI guide-decision calls. */
+const AI_INTERVAL_TICKS = 8;
 
 const scenario: Scenario = {
   nodes: [
@@ -418,10 +477,10 @@ const scenario: Scenario = {
 };
 
 const initialAgents: Agent[] = [
-  { id: "a1", lng: -114.369, lat: 62.454, kind: "resident" },
-  { id: "a2", lng: -114.365, lat: 62.453, kind: "resident" },
-  { id: "a3", lng: -114.361, lat: 62.452, kind: "resident" },
-  { id: "g1", lng: -114.358, lat: 62.454, kind: "guide" },
+  createResident("a1", -114.369, 62.454),
+  createResident("a2", -114.365, 62.453),
+  createResident("a3", -114.361, 62.452),
+  createGuide("g1", -114.358, 62.454),
   { id: "t1", lng: -114.366, lat: 62.451, kind: "truck" },
 ];
 
@@ -445,31 +504,59 @@ export default function SimulationPage() {
   const [activeTool, setActiveTool] = useState<"resident" | "guide" | "roadblock" | "fire" | "none">("none");
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
+  // Refs for use inside interval callbacks (avoid stale closures)
+  const [blockedEdges, setBlockedEdges] = useState(() => new Set<string>());
+
+  const agentsRef = useRef<Agent[]>(initialAgents);
+  const fireRef = useRef<FireCell[]>(initialFire);
+  const tickRef = useRef(0);
+  const guideDecisionsRef = useRef<GuideDecision[]>([]);
+  const blockedEdgesRef = useRef(new Set<string>());
+
+  // Keep refs in sync with state
+  useEffect(() => { agentsRef.current = agents; }, [agents]);
+  useEffect(() => { fireRef.current = fireCells; }, [fireCells]);
+
+  // Reset engine caches when component mounts (new simulation)
+  useEffect(() => {
+    resetEngineCache();
+    resetGuideSessions();
+    return () => { resetEngineCache(); resetGuideSessions(); };
+  }, []);
+
   const handleMapClick = useCallback((lng: number, lat: number) => {
     if (activeTool === "none") return;
 
     if (activeTool === "resident" || activeTool === "guide" || activeTool === "roadblock") {
       if (activeTool === "resident") {
-        const count = Math.floor(Math.random() * 31) + 20; // 20 to 50
+        const count = Math.floor(Math.random() * 31) + 20; // 20–50
+        const spawnTick = tickRef.current;
         const newAgents: Agent[] = [];
         for (let i = 0; i < count; i++) {
-          newAgents.push({
-            id: `agent-${Date.now()}-${i}`,
-            // Random scatter around the clicked area
-            lng: lng + (Math.random() - 0.5) * 0.02,
-            lat: lat + (Math.random() - 0.5) * 0.015,
-            kind: "resident",
-          });
+          newAgents.push(createResident(
+            `r-${Date.now()}-${i}`,
+            lng + (Math.random() - 0.5) * 0.02,
+            lat + (Math.random() - 0.5) * 0.015,
+            Math.floor(Math.random() * 6), // random reaction delay 0–5
+            spawnTick,
+          ));
         }
         setAgents((prev) => [...prev, ...newAgents]);
+      } else if (activeTool === "guide") {
+        setAgents((prev) => [
+          ...prev,
+          createGuide(`g-${Date.now()}`, lng, lat),
+        ]);
       } else {
-        const newAgent: Agent = {
-          id: `agent-${Date.now()}`,
-          lng,
-          lat,
-          kind: activeTool,
-        };
-        setAgents((prev) => [...prev, newAgent]);
+        // roadblock: toggle the nearest edge as blocked/unblocked
+        const edgeId = findNearestEdge(lng, lat, scenario);
+        if (edgeId) {
+          const next = new Set(blockedEdgesRef.current);
+          if (next.has(edgeId)) next.delete(edgeId);
+          else next.add(edgeId);
+          blockedEdgesRef.current = next;
+          setBlockedEdges(next);
+        }
       }
     } else if (activeTool === "fire") {
       const newFire: FireCell = {
@@ -510,16 +597,43 @@ export default function SimulationPage() {
     return () => cancelAnimationFrame(raf);
   }, []);
 
-  // 低频逻辑循环 (用来驱动火灾蔓延)
+  // 低频逻辑循环 — 火灾蔓延 (1000ms)
   useEffect(() => {
     if (isPaused) return;
-
     const timer = window.setInterval(() => {
-      setFireCells((prev) => stepFireSpread(prev, wind));
+      const segments = buildBlockedSegments(blockedEdgesRef.current, scenario);
+      setFireCells((prev) => stepFireSpread(prev, wind, segments));
     }, 1000);
-
     return () => window.clearInterval(timer);
   }, [isPaused, wind]);
+
+  // 低频逻辑循环 — Agent 仿真 (AGENT_TICK_MS)
+  useEffect(() => {
+    if (isPaused) return;
+    const timer = window.setInterval(() => {
+      const currentFire = fireRef.current;
+      const currentAgents = agentsRef.current;
+      const tick = ++tickRef.current;
+
+      const updated = stepAgents(
+        currentAgents,
+        scenario,
+        currentFire,
+        tick,
+        guideDecisionsRef.current,
+        blockedEdgesRef.current,
+      );
+      setAgents(updated);
+
+      // Refresh AI guide decisions every N ticks
+      if (tick % AI_INTERVAL_TICKS === 0) {
+        getGuideDecisions(updated, scenario, currentFire, tick, blockedEdgesRef.current)
+          .then((decisions) => { guideDecisionsRef.current = decisions; })
+          .catch((err: unknown) => console.error("[AI]", err));
+      }
+    }, AGENT_TICK_MS);
+    return () => window.clearInterval(timer);
+  }, [isPaused]);
 
   // 【核心修改点】：在这里计算脉冲，并传给火灾图层
   const layers = useMemo(() => {
@@ -528,13 +642,13 @@ export default function SimulationPage() {
 
 
     return [
-      ...makeRoadLayers(scenario),
+      ...makeRoadLayers(scenario, { blockedEdges }),
       // 将算好的 pulseRatio 作为参数传进去！
       ...makeFireLayer(fireCells, { pulseRatio }),
       ...makeAgentsLayer(agents),
       ...makeSafePointsLayer(scenario.safePoints, { timeMs }),
     ];
-  }, [timeMs, fireCells]);
+  }, [timeMs, fireCells, agents, blockedEdges]);
 
   return (
     <div style={{ display: "flex", height: "100vh", width: "100vw", overflow: "hidden", backgroundColor: "#1a1a1a" }}>

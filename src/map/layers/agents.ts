@@ -19,16 +19,23 @@ export function makeAgentsLayer(agents: Agent[], opts: Options = {}): Layer[] {
     onPickAgent,
   } = opts;
 
-  // 简单的颜色策略（RGBA）
-  const colorResident: [number, number, number, number] = [37, 99, 235, 230]; // 蓝
-  const colorGuide: [number, number, number, number] = [16, 185, 129, 235];   // 绿
-  const colorTruck: [number, number, number, number] = [245, 158, 11, 235];   // 橙
-  const colorSelected: [number, number, number, number] = [168, 85, 247, 245];// 紫
-  const colorRoadblock: [number, number, number, number] = [156, 163, 175, 235]; // 灰
+  // Colour palette (RGBA)
+  const colorResident: [number, number, number, number] = [37, 99, 235, 230];   // blue  — idle/moving
+  const colorGuide: [number, number, number, number]    = [16, 185, 129, 235];   // green — guide
+  const colorTruck: [number, number, number, number]    = [245, 158, 11, 235];   // amber — truck
+  const colorSelected: [number, number, number, number] = [168, 85, 247, 245];   // purple — selected
+  const colorRoadblock: [number, number, number, number]= [156, 163, 175, 235];  // grey  — roadblock
+  const colorSafe: [number, number, number, number]     = [134, 239, 172, 200];  // light-green — evacuated
+  const colorDead: [number, number, number, number]     = [239, 68, 68, 160];    // red (faded) — dead
+  const colorPanic: [number, number, number, number]    = [251, 191, 36, 240];   // yellow — panicking
+
+  // Hide safe agents after a moment (still render as tiny faded dot so the
+  // count stays visible on screen; set alpha = 0 to fully hide)
+  const visibleAgents = agents.filter((a) => a.status !== "safe");
 
   const dotLayer = new ScatterplotLayer<Agent>({
     id: "agents-dots",
-    data: agents,
+    data: visibleAgents,
     getPosition: (d) => [d.lng, d.lat, 5],
 
     radiusUnits: "meters",
@@ -36,20 +43,25 @@ export function makeAgentsLayer(agents: Agent[], opts: Options = {}): Layer[] {
       if (d.kind === "guide") return 30;
       if (d.kind === "truck") return 40;
       if (d.kind === "roadblock") return 25;
+      if (d.status === "dead") return 12; // shrink dead agents
       return 20; // resident
     },
-    radiusMinPixels: 4,
+    radiusMinPixels: 3,
 
     getFillColor: (d) => {
       if (selectedAgentId && d.id === selectedAgentId) return colorSelected;
+      if (d.status === "dead") return colorDead;
+      if (d.status === "safe") return colorSafe;
       if (d.kind === "guide") return colorGuide;
       if (d.kind === "truck") return colorTruck;
       if (d.kind === "roadblock") return colorRoadblock;
+      // Panic: recently panickedAt — yellow flash
+      if (d.panickedAt !== undefined) return colorPanic;
       return colorResident;
     },
 
     stroked: true,
-    getLineColor: () => [255, 255, 255, 200],
+    getLineColor: (d) => d.status === "dead" ? [0, 0, 0, 80] : [255, 255, 255, 200],
     lineWidthMinPixels: 1,
 
     pickable: true,

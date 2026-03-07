@@ -9,11 +9,9 @@ export type RoadEdgeDatum = {
 };
 
 type Options = {
-  /** 被路障封掉的道路 edgeIds（用于高亮显示） */
-  roadblocks?: string[];
-  /** 选中的道路 edgeId（用于高亮显示） */
-  selectedEdgeId?: string | null;
-  /** 点击道路回调（你可以在 App 里设置 selectedEdgeId 或发 action） */
+  /** 被路障封掉的道路 edgeIds */
+  blockedEdges?: Set<string>;
+  /** 点击道路回调 */
   onPickEdge?: (edgeId: string) => void;
 };
 
@@ -38,64 +36,81 @@ function buildEdgeData(scenario: Scenario): RoadEdgeDatum[] {
 }
 
 export function makeRoadLayers(scenario: Scenario, opts: Options = {}): Layer[] {
-  const { onPickEdge } = opts;
+  const { blockedEdges = new Set(), onPickEdge } = opts;
 
   const data = buildEdgeData(scenario);
-  //const blockedSet = new Set(roadblocks);
+  const normalData = data.filter((d) => !blockedEdges.has(d.id));
+  const blockedData = data.filter((d) => blockedEdges.has(d.id));
 
-  // 颜色策略（RGBA）
-  //const colorMainNormal: [number, number, number, number] = [250, 250, 250, 235]; // 主线近白
+  const handleClick = (info: { object: RoadEdgeDatum | null }) => {
+    if (!info.object) return;
+    onPickEdge?.(info.object.id);
+  };
 
-  //const colorMainBlocked: [number, number, number, number] = [239, 68, 68, 235]; // 红色主线（路障）
-
-  //const colorMainSelected: [number, number, number, number] = [96, 165, 250, 245]; // 浅蓝主线（选中）
-
-  // 外描边层：更粗，用来保证任何底图下都清晰
+  // 外描边层
   const outline = new PathLayer<RoadEdgeDatum>({
     id: "roads-outline",
-    data,
+    data: normalData,
     getPath: (d) => d.path,
     widthUnits: "meters",
     getWidth: () => 8,
     getColor: () => [15, 23, 42, 255],
     parameters: ({ depthTest: false } as any),
     billboard: true,
-
     capRounded: true,
     jointRounded: true,
-
     pickable: true,
     autoHighlight: true,
     highlightColor: [59, 130, 246, 120],
-    onClick: (info) => {
-      const obj = info.object as RoadEdgeDatum | null;
-      if (!obj) return;
-      onPickEdge?.(obj.id);
-    },
+    onClick: (info) => handleClick({ object: info.object as RoadEdgeDatum | null }),
   });
 
-  // 主线层：稍细，让道路看起来像“系统道路”
+  // 主线层
   const main = new PathLayer<RoadEdgeDatum>({
     id: "roads-main",
-    data,
+    data: normalData,
     getPath: (d) => d.path,
     widthUnits: "meters",
     getWidth: () => 5,
     getColor: () => [255, 255, 255, 255],
-    parameters: ({depthTest: false} as any),
+    parameters: ({ depthTest: false } as any),
     billboard: true,
-
     capRounded: true,
     jointRounded: true,
-    
     pickable: true,
-    // 主线不需要重复 onClick（outline 已经负责 pick），但保留也没问题
-    onClick: (info) => {
-      const obj = info.object as RoadEdgeDatum | null;
-      if (!obj) return;
-      onPickEdge?.(obj.id);
-    },
+    onClick: (info) => handleClick({ object: info.object as RoadEdgeDatum | null }),
   });
 
-  return [outline, main];
+  // 路障层（红色）
+  const blockedOutline = new PathLayer<RoadEdgeDatum>({
+    id: "roads-blocked-outline",
+    data: blockedData,
+    getPath: (d) => d.path,
+    widthUnits: "meters",
+    getWidth: () => 10,
+    getColor: () => [180, 0, 0, 255],
+    parameters: ({ depthTest: false } as any),
+    billboard: true,
+    capRounded: true,
+    jointRounded: true,
+    pickable: true,
+    onClick: (info) => handleClick({ object: info.object as RoadEdgeDatum | null }),
+  });
+
+  const blockedMain = new PathLayer<RoadEdgeDatum>({
+    id: "roads-blocked-main",
+    data: blockedData,
+    getPath: (d) => d.path,
+    widthUnits: "meters",
+    getWidth: () => 6,
+    getColor: () => [239, 68, 68, 255],
+    parameters: ({ depthTest: false } as any),
+    billboard: true,
+    capRounded: true,
+    jointRounded: true,
+    pickable: true,
+    onClick: (info) => handleClick({ object: info.object as RoadEdgeDatum | null }),
+  });
+
+  return [outline, main, blockedOutline, blockedMain];
 }
