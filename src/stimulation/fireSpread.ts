@@ -1,25 +1,25 @@
-import type { FireCell } from "../app/types";
+import type { FireCell, WindConfig } from "../app/types";
 
 const MAX_INTENSITY = 4;
-const SPREAD_THRESHOLD = 2; 
+const SPREAD_THRESHOLD = 2;
 
 const LNG_STEP = 0.00105;
 const LAT_STEP = 0.00055;
 // 间距稍微收紧一点点（从 0.00055 降到 0.0005），让火区连绵感更强
-const MIN_DISTANCE_THRESHOLD = 0.0005; 
+const MIN_DISTANCE_THRESHOLD = 0.0005;
 
 // --- 节奏平衡配置 ---
 /**
  * 【下调】升级概率：从 0.12 降至 0.06
  * 现在一个火点平均需要 15-20 秒才能升到最高级，让颜色演变更有“熬制”感。
  */
-const BASE_GROWTH_CHANCE = 0.08;  
+const BASE_GROWTH_CHANCE = 0.08;
 
 /**
  * 【上调】扩散概率：从 0.04 升至 0.09
  * 配合减短的冷却期，火势蔓延会明显变快。
  */
-const BASE_SPREAD_CHANCE = 0.09; 
+const BASE_SPREAD_CHANCE = 0.09;
 
 const DIRECTIONS = [
   [1, 0], [-1, 0], [0, 1], [0, -1],
@@ -32,11 +32,14 @@ function getDist(p1: [number, number], p2: [number, number]): number {
   return Math.sqrt(dx * dx + dy * dy);
 }
 
-export function stepFireSpread(fireCells: FireCell[]): FireCell[] {
+export function stepFireSpread(
+  fireCells: FireCell[],
+  wind?: WindConfig
+): FireCell[] {
   // 1. 内部升级逻辑 (慢节奏演化)
   const activeCells = fireCells.map(cell => {
     const nextCell = { ...cell, age: (cell.age ?? 0) + 1 };
-    
+
     // 升级概率：取消了之前的动态加成，改为纯随机，让升级变得“佛系”
     if (Math.random() < BASE_GROWTH_CHANCE && nextCell.intensity < MAX_INTENSITY) {
       nextCell.intensity += 1;
@@ -53,13 +56,32 @@ export function stepFireSpread(fireCells: FireCell[]): FireCell[] {
 
     // 扩散概率随强度增长，但基数变大
     // 强度 2: 9% | 强度 3: 18% | 强度 4: 27% (大火扩散非常猛)
-    const dynamicSpreadChance = BASE_SPREAD_CHANCE * (cell.intensity - 1);
-    
-    if (Math.random() > dynamicSpreadChance) continue;
+    const dynamicSpreadChance = (wind?.baseSpreadChance ?? BASE_SPREAD_CHANCE) * (cell.intensity - 1);
 
     // 随机选 1 个方向
     const dir = DIRECTIONS[Math.floor(Math.random() * DIRECTIONS.length)];
-    
+
+    // 【风力影响核心逻辑恢复】计算这股火苗是不是顺风
+    let finalSpreadChance = dynamicSpreadChance;
+    if (wind && wind.speed > 0) {
+      // 0度向北(dy=1), 90向东(dx=1) => Math.atan2(dx, dy)
+      // dir[0] 是经度差(东), dir[1] 是纬度差(北)
+      const fireAngleRad = Math.atan2(dir[0], dir[1]);
+      const fireAngleDeg = (fireAngleRad * 180) / Math.PI;
+
+      const angleDiff = Math.abs(wind.angleDeg - fireAngleDeg);
+      const angleDiffRad = (angleDiff * Math.PI) / 180;
+
+      // cosine 对齐度：顺风=+1，侧风=0，逆风=-1
+      const alignment = Math.cos(angleDiffRad);
+
+      // 顺风时最多放大3倍（根据风速），逆风时最少只剩15%
+      const multiplier = 1 + alignment * wind.speed * 2;
+      finalSpreadChance = Math.max(finalSpreadChance * 0.15, finalSpreadChance * multiplier);
+    }
+
+    if (Math.random() > finalSpreadChance) continue;
+
     const neighborPos: [number, number] = [
       cell.position[0] + dir[0] * LNG_STEP * 0.85, // 缩短步长，增加紧凑感
       cell.position[1] + dir[1] * LAT_STEP * 0.85
@@ -72,7 +94,7 @@ export function stepFireSpread(fireCells: FireCell[]): FireCell[] {
     ];
 
     // 空间检查
-    const isTooCrowded = nextFireList.some(existing => 
+    const isTooCrowded = nextFireList.some(existing =>
       getDist(existing.position, finalPos) < MIN_DISTANCE_THRESHOLD
     );
 

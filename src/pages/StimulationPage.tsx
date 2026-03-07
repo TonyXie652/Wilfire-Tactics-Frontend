@@ -7,7 +7,7 @@ import { makeAgentsLayer } from "../map/layers/agents";
 import { makeFireLayer } from "../map/layers/fire";
 import { makeSafePointsLayer } from "../map/layers/safePoints";
 import { stepFireSpread } from "../stimulation/fireSpread";
-import type { Scenario, Agent, FireCell } from "../app/types";
+import type { Scenario, Agent, FireCell, WindConfig } from "../app/types";
 
 const scenario: Scenario = {
   nodes: [
@@ -173,6 +173,13 @@ export default function SimulationPage() {
   const [isPaused, setIsPaused] = useState(false);
   const [testNodeId, setTestNodeId] = useState("");
 
+  // ── 风力参数（后续接入 UI 滑块控制） ──
+  const [wind, setWind] = useState<WindConfig>({
+    angleDeg: 45,           // 默认东北风
+    speed: 0.6,             // 中等风速
+    baseSpreadChance: 0.09, // 基础蔓延概率(使用朋友的新配置)
+  });
+
   // 高频动画循环 (用来驱动呼吸效果)
   useEffect(() => {
     let raf = 0;
@@ -196,11 +203,11 @@ export default function SimulationPage() {
     if (isPaused) return;
 
     const timer = window.setInterval(() => {
-      setFireCells((prev) => stepFireSpread(prev));
+      setFireCells((prev) => stepFireSpread(prev, wind));
     }, 1000);
 
     return () => window.clearInterval(timer);
-  }, [isPaused]);
+  }, [isPaused, wind]);
 
   const testNode = useMemo(() => scenario.nodes.find((n) => n.id === testNodeId), [testNodeId]);
 
