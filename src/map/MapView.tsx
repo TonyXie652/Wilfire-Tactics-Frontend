@@ -9,6 +9,7 @@ type Props = {
   center?: [number, number];
   zoom?: number;
   styleUrl?: string;
+  onClick?: (lng: number, lat: number) => void;
 };
 
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN as string;
@@ -19,10 +20,16 @@ export function MapView({
   center = DEFAULT_CENTER,
   zoom = 15,
   styleUrl = "mapbox://styles/mapbox/dark-v11",
+  onClick,
 }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const overlayRef = useRef<MapboxOverlay | null>(null);
+
+  const onClickRef = useRef(onClick);
+  useEffect(() => {
+    onClickRef.current = onClick;
+  }, [onClick]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -50,6 +57,12 @@ export function MapView({
     const overlay = new MapboxOverlay({
       interleaved: false,
       layers,
+      onClick: (info) => {
+        if (info.coordinate) {
+          console.log("DeckGL clicked at lng/lat:", info.coordinate[0], info.coordinate[1]);
+          onClickRef.current?.(info.coordinate[0], info.coordinate[1]);
+        }
+      }
     });
 
     map.addControl(overlay as never);
@@ -60,11 +73,14 @@ export function MapView({
         bearing: -35,
         duration: 2000,
       });
-      
+
       map.on("click", (e) => {
+        // Fallback for native mapbox click if DeckGL doesn't catch it
         const lng = e.lngLat.lng;
         const lat = e.lngLat.lat;
-        console.log("点击位置经纬度:", lng, lat);
+
+        console.log("Mapbox native click at lng/lat:", lng, lat);
+        onClickRef.current?.(lng, lat);
       });
 
       const styleLayers = map.getStyle().layers;
@@ -114,7 +130,30 @@ export function MapView({
   }, []);
 
   useEffect(() => {
-    overlayRef.current?.setProps({ layers });
+    if (!containerRef.current || !mapRef.current) return;
+
+    // Create a ResizeObserver to automatically resize the map when the container changes dimensions
+    // This is crucial for split-screen layouts where the window size doesn't change but the div does.
+    const resizeObserver = new ResizeObserver(() => {
+      mapRef.current?.resize();
+    });
+
+    resizeObserver.observe(containerRef.current);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, []);
+
+  useEffect(() => {
+    overlayRef.current?.setProps({
+      layers,
+      onClick: (info) => {
+        if (info.coordinate) {
+          onClickRef.current?.(info.coordinate[0], info.coordinate[1]);
+        }
+      }
+    });
   }, [layers]);
 
   return <div ref={containerRef} style={{ height: "100%", width: "100%" }} />;

@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { MapView } from "../map/MapView";
+import { Toolbar } from "../ui/Toolbar";
 import { makeRoadLayers } from "../map/layers/roads";
 import { makeAgentsLayer } from "../map/layers/agents";
 import { makeFireLayer } from "../map/layers/fire";
@@ -416,7 +417,7 @@ const scenario: Scenario = {
   ],
 };
 
-const agents: Agent[] = [
+const initialAgents: Agent[] = [
   { id: "a1", lng: -114.369, lat: 62.454, kind: "resident" },
   { id: "a2", lng: -114.365, lat: 62.453, kind: "resident" },
   { id: "a3", lng: -114.361, lat: 62.452, kind: "resident" },
@@ -439,7 +440,50 @@ export default function SimulationPage() {
   const navigate = useNavigate();
   const [timeMs, setTimeMs] = useState(() => performance.now());
   const [fireCells, setFireCells] = useState<FireCell[]>(initialFire);
+  const [agents, setAgents] = useState<Agent[]>(initialAgents);
   const [isPaused, setIsPaused] = useState(true);
+  const [activeTool, setActiveTool] = useState<"resident" | "guide" | "roadblock" | "fire" | "none">("none");
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+
+  const handleMapClick = useCallback((lng: number, lat: number) => {
+    if (activeTool === "none") return;
+
+    if (activeTool === "resident" || activeTool === "guide" || activeTool === "roadblock") {
+      if (activeTool === "resident") {
+        const count = Math.floor(Math.random() * 31) + 20; // 20 to 50
+        const newAgents: Agent[] = [];
+        for (let i = 0; i < count; i++) {
+          newAgents.push({
+            id: `agent-${Date.now()}-${i}`,
+            // Random scatter around the clicked area
+            lng: lng + (Math.random() - 0.5) * 0.02,
+            lat: lat + (Math.random() - 0.5) * 0.015,
+            kind: "resident",
+          });
+        }
+        setAgents((prev) => [...prev, ...newAgents]);
+      } else {
+        const newAgent: Agent = {
+          id: `agent-${Date.now()}`,
+          lng,
+          lat,
+          kind: activeTool,
+        };
+        setAgents((prev) => [...prev, newAgent]);
+      }
+    } else if (activeTool === "fire") {
+      const newFire: FireCell = {
+        id: `fire-${Date.now()}`,
+        position: [lng, lat],
+        intensity: 1,
+        size: 80,
+        age: 0,
+        activatedAt: 0,
+      };
+      setFireCells((prev) => [...prev, newFire]);
+    }
+  }, [activeTool]);
+
 
   // ── 风力参数（后续接入 UI 滑块控制） ──
   const [wind] = useState<WindConfig>({
@@ -487,61 +531,115 @@ export default function SimulationPage() {
       ...makeRoadLayers(scenario),
       // 将算好的 pulseRatio 作为参数传进去！
       ...makeFireLayer(fireCells, { pulseRatio }),
-      makeAgentsLayer(agents),
+      ...makeAgentsLayer(agents),
       ...makeSafePointsLayer(scenario.safePoints, { timeMs }),
     ];
   }, [timeMs, fireCells]);
 
   return (
-    <div style={{ height: "100vh", width: "100vw", position: "relative" }}>
-      {/* 顶部按钮 UI */}
-      <button
-        onClick={() => navigate("/")}
-        style={{
-          position: "absolute",
-          top: 20,
-          left: 20,
-          zIndex: 10,
-          padding: "10px 16px",
-          fontSize: "14px",
-          background: "#1f2937",
-          color: "white",
-          border: "1px solid #444",
-          borderRadius: "6px",
-          cursor: "pointer",
-        }}
-      >
-        Back Home
-      </button>
-
-      <div
-        style={{
-          position: "absolute",
-          top: 20,
-          right: 20,
-          zIndex: 10,
-          display: "flex",
-          gap: "10px",
-          alignItems: "center"
-        }}
-      >
+    <div style={{ display: "flex", height: "100vh", width: "100vw", overflow: "hidden", backgroundColor: "#1a1a1a" }}>
+      {/* Left: Map container */}
+      <div style={{ flex: 1, position: "relative", backgroundColor: "#1e1e1e" }}>
+        {/* 顶部按钮 UI */}
         <button
-          onClick={() => setIsPaused((p) => !p)}
+          onClick={() => navigate("/")}
           style={{
+            position: "absolute",
+            top: 20,
+            left: 20,
+            zIndex: 10,
             padding: "10px 16px",
             fontSize: "14px",
-            background: isPaused ? "#2e7d32" : "#b71c1c",
+            background: "#1f2937",
             color: "white",
             border: "1px solid #444",
             borderRadius: "6px",
             cursor: "pointer",
           }}
         >
-          {isPaused ? "Resume Fire" : "Pause Fire"}
+          Back Home
         </button>
+
+        <MapView layers={layers} onClick={handleMapClick} />
       </div>
 
-      <MapView layers={layers} />
+      {/* Right: Control panel and workspace */}
+      <div
+        style={{
+          width: isSidebarOpen ? "350px" : "60px",
+          minWidth: isSidebarOpen ? "350px" : "60px",
+          transition: "width 0.3s ease",
+          background: "#1a1a1a",
+          borderLeft: "1px solid #333",
+          display: "flex",
+          flexDirection: "column",
+          padding: isSidebarOpen ? "20px" : "20px 0",
+          boxSizing: "border-box",
+          overflowY: "auto",
+          overflowX: "hidden",
+          position: "relative"
+        }}
+      >
+        <div style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: isSidebarOpen ? "flex-start" : "center",
+          marginBottom: isSidebarOpen ? "20px" : "0"
+        }}>
+          {/* Toggle Collapse Button */}
+          <button
+            onClick={() => setIsSidebarOpen(prev => !prev)}
+            style={{
+              background: "transparent",
+              border: "none",
+              color: "#aaa",
+              cursor: "pointer",
+              fontSize: "18px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              marginRight: isSidebarOpen ? "10px" : "0",
+              zIndex: 20
+            }}
+            title={isSidebarOpen ? "Collapse Workspace" : "Expand Workspace"}
+          >
+            {isSidebarOpen ? "▶" : "◀"}
+          </button>
+
+          {isSidebarOpen && (
+            <h2 style={{ color: "#fff", margin: 0, fontSize: "18px" }}>Workspace</h2>
+          )}
+        </div>
+
+        {isSidebarOpen && (
+          <>
+
+            {/* Global tools */}
+            <div style={{ marginBottom: "30px" }}>
+              <button
+                onClick={() => setIsPaused((p) => !p)}
+                style={{
+                  width: "100%",
+                  padding: "12px 16px",
+                  fontSize: "14px",
+                  fontWeight: "bold",
+                  background: isPaused ? "#2e7d32" : "#b71c1c",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "6px",
+                  cursor: "pointer",
+                  transition: "background 0.2s"
+                }}
+              >
+                {isPaused ? "▶ Resume Fire" : "⏸ Pause Fire"}
+              </button>
+            </div>
+
+            {/* Toolbar component */}
+            <Toolbar activeTool={activeTool} onSelectTool={setActiveTool} />
+          </>
+        )}
+      </div>
     </div>
   );
 }

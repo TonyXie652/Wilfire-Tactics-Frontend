@@ -29,7 +29,7 @@ export type Agent = {
   id: string;
   lng: number;
   lat: number;
-  kind: "resident" | "guide" | "truck"; // truck 可选，但你后面想放消防车就很方便
+  kind: "resident" | "guide" | "truck" | "roadblock"; // truck 可选，但你后面想放消防车就很方便
   status?: "moving" | "safe" | "dead";
 };
 

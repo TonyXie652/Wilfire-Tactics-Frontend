@@ -17,8 +17,8 @@ const FIRE_MODEL_URL = "/models/fire.glb";
 // 1. 颜色计算：调整亮度和 Alpha 值，使用更明亮的颜色
 function getFireCoreColor(intensity: number): [number, number, number, number] {
   if (intensity <= 0) return [0, 0, 0, 0];
-  if (intensity === 1) return [255, 180, 50, 200]; 
-  if (intensity === 2) return [255, 100, 0, 220];  
+  if (intensity === 1) return [255, 180, 50, 200];
+  if (intensity === 2) return [255, 100, 0, 220];
   if (intensity === 3) return [255, 60, 0, 220]; // 增加少量透明度 (从 255 降至 220)
   return [255, 0, 0, 230]; // 核心区明亮红色，但也保留一丝透明度 (从 255 降至 230)
 }
@@ -57,9 +57,9 @@ export function makeFireLayer(fireCells: FireCell[], opts: Options = {}): Layer[
       // 获取当前强度的颜色，保持色相但提高亮度和不透明度作为发光边缘
       const core = getFireCoreColor(d.intensity);
       // 如果火苗强度极低，就不增加刺眼的边缘了
-      if (d.intensity <= 1) return [core[0], core[1], core[2], 0]; 
+      if (d.intensity <= 1) return [core[0], core[1], core[2], 0];
       // 对于中大火，边缘加上明黄/亮橙色的光环效果，并大幅增加透明度让边缘更柔和、不那么实心
-      return [255, 220, 100, 225]; 
+      return [255, 220, 100, 225];
     },
     getLineWidth: 2,
     lineWidthUnits: 'pixels',
@@ -70,7 +70,7 @@ export function makeFireLayer(fireCells: FireCell[], opts: Options = {}): Layer[
 
     // 【解决闪烁与横纹】：
     parameters: {
-      depthWrite: false, 
+      depthWrite: false,
       depthTest: true,
       blend: true,
       blendEquation: GL.FUNC_ADD,
@@ -88,14 +88,14 @@ export function makeFireLayer(fireCells: FireCell[], opts: Options = {}): Layer[
       const candidates = activeFireCells.filter(d => d.intensity >= 4);
       const selected: FireCell[] = [];
       // 这个距离阈值控制着 3D 模型的最终观感密度（建议在 0.0006 - 0.001 之间）
-      const MIN_MODEL_SPACING = 0.0007; 
-      
+      const MIN_MODEL_SPACING = 0.0007;
+
       for (const cell of candidates) {
         // 检查这个准模型和已经选中的模型是不是太近了
         const isTooClose = selected.some(s => {
           const dx = s.position[0] - cell.position[0];
           const dy = s.position[1] - cell.position[1];
-          return Math.sqrt(dx*dx + dy*dy) < MIN_MODEL_SPACING;
+          return Math.sqrt(dx * dx + dy * dy) < MIN_MODEL_SPACING;
         });
 
         if (!isTooClose) {
@@ -109,7 +109,10 @@ export function makeFireLayer(fireCells: FireCell[], opts: Options = {}): Layer[
     loaders: [GLTFLoader],
 
     // 增加高度偏移 Z
-    getPosition: (d) => getJitteredPosition(d.position, d.id, 0.0003),
+    getPosition: (d) => {
+      const pos = getJitteredPosition(d.position, d.id, 0.0003);
+      return [pos[0], pos[1], pos[2] ? pos[2] + 18 : 18];
+    },
 
     _animations: { '*': { playing: true } },
 
@@ -120,8 +123,8 @@ export function makeFireLayer(fireCells: FireCell[], opts: Options = {}): Layer[
       const baseScale = 30;
       const seed = d.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % 100;
       // 在 Y 轴向上引入 0.8 ~ 1.2 的体积方差，打破完全复制的单调感
-      const randomYOffset = 0.8 + (seed / 100) * 0.4; 
-      
+      const randomYOffset = 0.8 + (seed / 100) * 0.4;
+
       const sX = baseScale * pulseRatio;
       const sY = baseScale * pulseRatio * randomYOffset;
       const sZ = baseScale * pulseRatio;
@@ -136,7 +139,7 @@ export function makeFireLayer(fireCells: FireCell[], opts: Options = {}): Layer[
     parameters: {
       depthWrite: false,
       // 关闭深度测试，或者调整渲染顺序，让 3D 模型永远在底座圆圈之上渲染
-      depthTest: false, 
+      depthTest: false,
       blend: true,
       blendEquation: GL.FUNC_ADD,
       // 恢复轻微的加法混合，让火焰更亮，但为了不过曝，采用 SRC_ALPHA 控制

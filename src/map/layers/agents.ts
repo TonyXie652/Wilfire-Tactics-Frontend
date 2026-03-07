@@ -13,7 +13,7 @@ type Options = {
   baseRadiusMeters?: number;
 };
 
-export function makeAgentsLayer(agents: Agent[], opts: Options = {}): Layer {
+export function makeAgentsLayer(agents: Agent[], opts: Options = {}): Layer[] {
   const {
     selectedAgentId = null,
     onPickAgent,
@@ -24,20 +24,27 @@ export function makeAgentsLayer(agents: Agent[], opts: Options = {}): Layer {
   const colorGuide: [number, number, number, number] = [16, 185, 129, 235];   // 绿
   const colorTruck: [number, number, number, number] = [245, 158, 11, 235];   // 橙
   const colorSelected: [number, number, number, number] = [168, 85, 247, 245];// 紫
+  const colorRoadblock: [number, number, number, number] = [156, 163, 175, 235]; // 灰
 
-  return new ScatterplotLayer<Agent>({
-    id: "agents",
+  const dotLayer = new ScatterplotLayer<Agent>({
+    id: "agents-dots",
     data: agents,
     getPosition: (d) => [d.lng, d.lat, 5],
 
     radiusUnits: "meters",
-    getRadius: (d) => (d.kind === "guide" ? 30 : d.kind === "truck" ? 40 : 20),
+    getRadius: (d) => {
+      if (d.kind === "guide") return 30;
+      if (d.kind === "truck") return 40;
+      if (d.kind === "roadblock") return 25;
+      return 20; // resident
+    },
     radiusMinPixels: 4,
 
     getFillColor: (d) => {
       if (selectedAgentId && d.id === selectedAgentId) return colorSelected;
       if (d.kind === "guide") return colorGuide;
       if (d.kind === "truck") return colorTruck;
+      if (d.kind === "roadblock") return colorRoadblock;
       return colorResident;
     },
 
@@ -49,7 +56,7 @@ export function makeAgentsLayer(agents: Agent[], opts: Options = {}): Layer {
     autoHighlight: true,
     highlightColor: [255, 255, 255, 80],
 
-    // 减少缩放时闪烁
+    // Prevent z-fighting during zoom
     parameters: ({ depthTest: false, depthMask: false } as any),
 
     onClick: (info) => {
@@ -58,4 +65,6 @@ export function makeAgentsLayer(agents: Agent[], opts: Options = {}): Layer {
       onPickAgent?.(obj.id);
     },
   });
+
+  return [dotLayer] as Layer[];
 }
