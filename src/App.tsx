@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { ScatterplotLayer } from "@deck.gl/layers";
 import { MapView } from "./map/MapView";
 import { makeRoadLayers } from "./map/layers/roads";
 import { makeAgentsLayer } from "./map/layers/agents";
@@ -62,10 +63,18 @@ const scenario: Scenario = {
     { id: "n44", lng: -114.36429143225112, lat: 62.45500429885172 },
     { id: "n45", lng: -114.3621855990103, lat: 62.454099945551235 },
     { id: "n46", lng: -114.36499781177862, lat: 62.452080989077956 },
-    { id: "n38", lng: -114.37539054167891, lat: 62.45238356203424 },
-    { id: "n38", lng: -114.37539054167891, lat: 62.45238356203424 },
-    
-    
+    { id: "n47", lng: -114.3708922338364, lat: 62.44924722983049 },
+    { id: "n48", lng: -114.36743903363445, lat: 62.44773448944542 },
+    { id: "n49", lng: -114.36752385675942, lat: 62.448820009925015 },
+    { id: "n50", lng: -114.36692065378801, lat: 62.44908560589241 },
+    { id: "n51", lng: -114.37386811161086, lat: 62.44786455052653 },
+    { id: "n52", lng: -114.37289938649073, lat: 62.450162479977024 },
+    { id: "n53", lng: -114.37525547805906, lat: 62.44903275928718 },
+    { id: "n54", lng: -114.37325849389411, lat: 62.44814799606189 },
+    { id: "n55", lng: -114.3721351064826, lat: 62.447622536952366 },
+    { id: "n56", lng: -114.37928999069784, lat: 62.450541736187574 },
+    { id: "n57", lng: -114.3830203625372, lat: 62.45215422409777 },
+    { id: "n58", lng: -114.38101342830652, lat: 62.449105488947765 },
   ],
 
   edges: [
@@ -121,6 +130,16 @@ const scenario: Scenario = {
     { id: "e50", from: "n42", to: "n24" },
     { id: "e51", from: "n43", to: "n3" },
     { id: "e52", from: "n44", to: "n21" },
+    { id: "e53", from: "n47", to: "n48" },
+    { id: "e54", from: "n39", to: "n49" },
+    { id: "e55", from: "n49", to: "n50" },
+    { id: "e56", from: "n47", to: "n51" },
+    { id: "e57", from: "n52", to: "n53" },
+    { id: "e58", from: "n53", to: "n54" },
+    { id: "e59", from: "n54", to: "n55" },
+    { id: "e60", from: "n4", to: "n56" },
+    { id: "e61", from: "n56", to: "n57" },
+    { id: "e62", from: "n56", to: "n58" },
   ],
 
   safePoints: [
@@ -153,6 +172,7 @@ export default function App() {
   const [timeMs, setTimeMs] = useState(() => performance.now());
   const [fireCells, setFireCells] = useState<FireCell[]>(initialFire);
   const [isPaused, setIsPaused] = useState(false);
+  const [testNodeId, setTestNodeId] = useState("");
 
   useEffect(() => {
     let raf = 0;
@@ -180,35 +200,74 @@ export default function App() {
     return () => window.clearInterval(timer);
   }, [isPaused]);
 
+  const testNode = useMemo(() => scenario.nodes.find((n) => n.id === testNodeId), [testNodeId]);
+
   const layers = useMemo(() => {
     return [
       ...makeRoadLayers(scenario),
       ...makeFireLayer(fireCells),
       makeAgentsLayer(agents),
       ...makeSafePointsLayer(scenario.safePoints, { timeMs }),
+      ...(testNode
+        ? [
+          new ScatterplotLayer({
+            id: "test-node-highlight",
+            data: [testNode],
+            getPosition: (d) => [d.lng, d.lat, 10],
+            getFillColor: [0, 255, 255, 255], // 醒目的青色
+            getRadius: 20,
+            radiusUnits: "meters",
+            radiusMinPixels: 15,
+            parameters: { depthTest: false } as any,
+          }),
+        ]
+        : []),
     ];
-  }, [timeMs, fireCells]);
+  }, [timeMs, fireCells, testNode]);
 
   return (
     <div style={{ height: "100vh", width: "100vw" }}>
-      <button
-        onClick={() => setIsPaused((p) => !p)}
+      <div
         style={{
-        position: "absolute",
-        top: 20,
-        right: 20,
-        zIndex: 10,
-        padding: "10px 16px",
-        fontSize: "14px",
-        background: isPaused ? "#2e7d32" : "#b71c1c",
-        color: "white",
-        border: "1px solid #444",
-        borderRadius: "6px",
-        cursor: "pointer",
+          position: "absolute",
+          top: 20,
+          right: 20,
+          zIndex: 10,
+          display: "flex",
+          gap: "10px",
+          alignItems: "center"
         }}
       >
-      {isPaused ? "Resume Fire" : "Pause Fire"}
-      </button>
+        <input
+          type="text"
+          placeholder="搜索 Node ID (如 n25)"
+          value={testNodeId}
+          onChange={(e) => setTestNodeId(e.target.value.trim())}
+          style={{
+            padding: "8px 12px",
+            fontSize: "14px",
+            borderRadius: "6px",
+            border: "1px solid #444",
+            background: "rgba(0,0,0,0.7)",
+            color: "white",
+            outline: "none"
+          }}
+        />
+        <button
+          onClick={() => setIsPaused((p) => !p)}
+          style={{
+            padding: "10px 16px",
+            fontSize: "14px",
+            background: isPaused ? "#2e7d32" : "#b71c1c",
+            color: "white",
+            border: "1px solid #444",
+            borderRadius: "6px",
+            cursor: "pointer",
+          }}
+        >
+          {isPaused ? "Resume Fire" : "Pause Fire"}
+        </button>
+      </div>
 
       <MapView layers={layers} />
     </div>
