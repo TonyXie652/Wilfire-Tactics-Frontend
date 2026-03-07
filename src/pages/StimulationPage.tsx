@@ -174,7 +174,7 @@ export default function SimulationPage() {
   const [testNodeId, setTestNodeId] = useState("");
 
   // ── 风力参数（后续接入 UI 滑块控制） ──
-  const [wind, setWind] = useState<WindConfig>({
+  const [wind] = useState<WindConfig>({
     angleDeg: 45,           // 默认东北风
     speed: 0.6,             // 中等风速
     baseSpreadChance: 0.09, // 基础蔓延概率(使用朋友的新配置)
