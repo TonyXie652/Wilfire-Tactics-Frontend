@@ -147,10 +147,10 @@ const scenario: Scenario = {
 // ─── 初始 Agent（散布在路网节点附近） ───
 
 const initialAgents: Agent[] = [
-  createResident("a1", -114.369, 62.454, 2),
-  createResident("a2", -114.365, 62.453, 4),
-  createResident("a3", -114.361, 62.452, 3),
-  createGuide("g1", -114.358, 62.454),
+  createResident("a1", -114.3698, 62.4578, 2),  // near n20
+  createResident("a2", -114.3681, 62.4578, 4),  // near n17
+  createResident("a3", -114.3656, 62.4567, 3),  // near n18
+  createGuide("g1", -114.3765, 62.4518),        // near n4
 ];
 
 const initialFire: FireCell[] = [
