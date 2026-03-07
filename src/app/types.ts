@@ -25,12 +25,41 @@ export type Scenario = {
   safePoints: SafePoint[]
 }
 
+export type AgentStatus = "idle" | "moving" | "safe" | "dead";
+
 export type Agent = {
   id: string;
   lng: number;
   lat: number;
-  kind: "resident" | "guide" | "truck"; // truck 可选，但你后面想放消防车就很方便
-  status?: "moving" | "safe" | "dead";
+  kind: "resident" | "guide" | "truck";
+  status: AgentStatus;
+
+  // 移动参数
+  speed: number;              // 每 tick 移动距离（经纬度单位，约 0.00005 ≈ 5米）
+  currentNodeId?: string;     // 当前最近的路网节点
+  targetNodeId?: string;      // 路径中的下一个目标节点
+
+  // A* 路径
+  path: string[];             // A* 算出的 nodeId 列表
+  pathIndex: number;          // 当前走到 path 的第几步
+  pathHistory: [number, number][];  // 历史轨迹坐标（用于回放）
+
+  // 跟随引导员
+  followingGuideId?: string;  // 正在跟随的引导员 ID（如果有）
+  willFollowGuide?: boolean;  // 是否选择跟随（只掷骰一次）
+  targetSafePointId?: string; // 当前路径对应的目标安全点
+
+  // 反应延迟
+  reactionDelay: number;      // 多少 tick 后才开始行动
+  ticksSinceStart: number;    // 从模拟开始经过的 tick 数
+  spawnTick?: number;         // 生成时的全局 tick（用于 reactionDelay）
+};
+
+/** 引导员 AI 的一次决策 */
+export type GuideDecision = {
+  guideId: string;
+  targetSafePointId: string;
+  reason?: string;
 };
 
 export type FireCell = {
@@ -40,17 +69,10 @@ export type FireCell = {
   size: number;
   age?: number;
   activatedAt?: number;
-}; // intensity 0..1
+};
 
-/**
- * 风力配置，供用户在 UI 中实时调整。
- *
- * angleDeg - 风向角度 (0=北, 90=东, 180=南, 270=西)
- * speed - 风速 (0~1 的归一化系数，用来放大迎风面的蔓延概率)
- * baseSpreadChance - 基础蔓延概率，方便 UI 调节整体难度
- */
 export type WindConfig = {
   angleDeg: number;
   speed: number;
-  baseSpreadChance: number;
+  baseSpreadChance?: number;
 };

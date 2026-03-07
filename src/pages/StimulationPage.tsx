@@ -416,12 +416,22 @@ const scenario: Scenario = {
   ],
 };
 
+const defaultAgentProps = {
+  status: "idle" as const,
+  speed: 0.00005,
+  path: [],
+  pathIndex: 0,
+  pathHistory: [] as [number, number][],
+  reactionDelay: 0,
+  ticksSinceStart: 0,
+};
+
 const agents: Agent[] = [
-  { id: "a1", lng: -114.369, lat: 62.454, kind: "resident" },
-  { id: "a2", lng: -114.365, lat: 62.453, kind: "resident" },
-  { id: "a3", lng: -114.361, lat: 62.452, kind: "resident" },
-  { id: "g1", lng: -114.358, lat: 62.454, kind: "guide" },
-  { id: "t1", lng: -114.366, lat: 62.451, kind: "truck" },
+  { id: "a1", lng: -114.369, lat: 62.454, kind: "resident", ...defaultAgentProps },
+  { id: "a2", lng: -114.365, lat: 62.453, kind: "resident", ...defaultAgentProps },
+  { id: "a3", lng: -114.361, lat: 62.452, kind: "resident", ...defaultAgentProps },
+  { id: "g1", lng: -114.358, lat: 62.454, kind: "guide", ...defaultAgentProps },
+  { id: "t1", lng: -114.366, lat: 62.451, kind: "truck", ...defaultAgentProps },
 ];
 
 const initialFire: FireCell[] = [
@@ -480,14 +490,14 @@ export default function SimulationPage() {
   // 【核心修改点】：在这里计算脉冲，并传给火灾图层
   const layers = useMemo(() => {
 
-    const pulseRatio = 1.0 + Math.sin(timeMs / 150) * 0.02;
+    const pulseRatio = 1.0 + Math.sin(timeMs / 300) * 0.02;
 
 
     return [
       ...makeRoadLayers(scenario),
       // 将算好的 pulseRatio 作为参数传进去！
       ...makeFireLayer(fireCells, { pulseRatio }),
-      makeAgentsLayer(agents),
+      ...makeAgentsLayer(agents),
       ...makeSafePointsLayer(scenario.safePoints, { timeMs }),
     ];
   }, [timeMs, fireCells]);

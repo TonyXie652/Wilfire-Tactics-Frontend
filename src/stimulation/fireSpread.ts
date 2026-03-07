@@ -5,21 +5,21 @@ const SPREAD_THRESHOLD = 2;
 
 const LNG_STEP = 0.00105;
 const LAT_STEP = 0.00055;
-// 间距彻底拉大，让火区之间有明显的间隔
-const MIN_DISTANCE_THRESHOLD = 0.0006;
+// 间距必须小于最小步幅 (LAT_STEP * 1.2 = 0.00066)，否则南北方向永远无法扩散
+const MIN_DISTANCE_THRESHOLD = 0.0005;
 
 // --- 节奏平衡配置 ---
 /**
- * 【下调】升级概率：从 0.08 降至 0.02
- * 让升级速度变慢，适合观察模拟演变。
+ * 【调整】升级概率
+ * 稍微加快一点升级速度，让火情能较快到达可以蔓延的级别 (Intensity > 2)
  */
-const BASE_GROWTH_CHANCE = 0.2; // 继续大幅下调生长速度0.04
+const BASE_GROWTH_CHANCE = 0.003;
 
 /**
- * 【下调】扩散概率：从 0.09 降至 0.04
- * 配合变慢的升级速度，火势蔓延变得更稳定。
+ * 【调整】扩散概率
+ * 确保火势能肉眼可见地向外复制蔓延。
  */
-const BASE_SPREAD_CHANCE = 0.6;
+const BASE_SPREAD_CHANCE = 0.01;
 
 const DIRECTIONS = [
   [1, 0], [-1, 0], [0, 1], [0, -1],
@@ -85,8 +85,8 @@ export function stepFireSpread(
     if (Math.random() > finalSpreadChance) continue;
 
     const neighborPos: [number, number] = [
-      cell.position[0] + dir[0] * LNG_STEP * 0.65, // 拉开更大的步长，火点生得更远
-      cell.position[1] + dir[1] * LAT_STEP * 0.65
+      cell.position[0] + dir[0] * LNG_STEP * 1.2, // 加大蔓延步幅，保证每次新生火点都在最小间距阈值之外
+      cell.position[1] + dir[1] * LAT_STEP * 1.2
     ];
 
     const jitter = 0.02; // 极小的 jitter 偏差，完全杜绝越出圆圈

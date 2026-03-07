@@ -1,5 +1,6 @@
 // src/map/layers/roads.ts
 import { PathLayer } from "@deck.gl/layers";
+import { PathStyleExtension } from "@deck.gl/extensions";
 import type { Layer } from "@deck.gl/core";
 import type { Scenario } from "../../app/types";
 
@@ -56,8 +57,8 @@ export function makeRoadLayers(scenario: Scenario, opts: Options = {}): Layer[] 
     data,
     getPath: (d) => d.path,
     widthUnits: "meters",
-    getWidth: () => 8,
-    getColor: () => [15, 23, 42, 255],
+    getWidth: () => 7,
+    getColor: () => [50, 55, 65, 220],
     parameters: ({ depthTest: false } as any),
     billboard: true,
 
@@ -80,8 +81,8 @@ export function makeRoadLayers(scenario: Scenario, opts: Options = {}): Layer[] 
     data,
     getPath: (d) => d.path,
     widthUnits: "meters",
-    getWidth: () => 5,
-    getColor: () => [255, 255, 255, 255],
+    getWidth: () => 4,
+    getColor: () => [230, 232, 235, 235],
     parameters: ({depthTest: false} as any),
     billboard: true,
 
@@ -97,5 +98,26 @@ export function makeRoadLayers(scenario: Scenario, opts: Options = {}): Layer[] 
     },
   });
 
-  return [outline, main];
+  // 疏散路线虚线层：绿色断续的中心线，模拟安全疏散标记
+  const evacRouteProps = {
+    id: "roads-evac-dashes",
+    data,
+    getPath: (d: RoadEdgeDatum) => d.path,
+    widthUnits: "meters" as const,
+    getWidth: 1.5,
+    getColor: [34, 197, 94, 180], // 翡翠绿
+    parameters: { depthTest: false },
+    billboard: true,
+    capRounded: false,
+    jointRounded: false,
+
+    // PathStyleExtension 提供虚线支持
+    extensions: [new PathStyleExtension({ dash: true })],
+    getDashArray: [6, 4], // 6 单位实线 + 4 单位间隔
+    dashJustified: true,
+    dashGapPickable: false,
+  };
+  const evacRoute = new PathLayer(evacRouteProps as any);
+
+  return [outline, main, evacRoute];
 }
