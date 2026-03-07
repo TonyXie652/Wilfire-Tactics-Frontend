@@ -8,6 +8,8 @@ type Props = {
   center?: [number, number];
   zoom?: number;
   styleUrl?: string;
+  /** 点击地图空白处的回调（经纬度）*/
+  onMapClick?: (lng: number, lat: number) => void;
 };
 
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN as string;
@@ -18,10 +20,13 @@ export function MapView({
   center = DEFAULT_CENTER,
   zoom = 15,
   styleUrl = "mapbox://styles/mapbox/dark-v11",
+  onMapClick,
 }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const overlayRef = useRef<MapboxOverlay | null>(null);
+  const onMapClickRef = useRef(onMapClick);
+  onMapClickRef.current = onMapClick;
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -59,12 +64,12 @@ export function MapView({
         bearing: -35,
         duration: 2000,
       });
-      
+
       map.on("click", (e) => {
         const lng = e.lngLat.lng;
         const lat = e.lngLat.lat;
-
         console.log("点击位置经纬度:", lng, lat);
+        onMapClickRef.current?.(lng, lat);
       });
 
       const styleLayers = map.getStyle().layers;
