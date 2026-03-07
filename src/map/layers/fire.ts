@@ -121,7 +121,10 @@ export function makeFireLayer(fireCells: FireCell[], opts: Options = {}): Layer[
     loaders: [GLTFLoader],
 
     // 增加高度偏移 Z
-    getPosition: (d) => getJitteredPosition(d.position, d.id, 0.0003),
+    getPosition: (d) => {
+      const pos = getJitteredPosition(d.position, d.id, 0.0003);
+      return [pos[0], pos[1], pos[2] ? pos[2] + 18 : 18];
+    },
 
     _animations: { '*': { playing: true } },
 

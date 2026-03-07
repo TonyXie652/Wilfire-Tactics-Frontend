@@ -13,13 +13,16 @@ const MIN_DISTANCE_THRESHOLD = 0.0005;
  * 【调整】升级概率
  * 稍微加快一点升级速度，让火情能较快到达可以蔓延的级别 (Intensity > 2)
  */
-const BASE_GROWTH_CHANCE = 0.003;
+const BASE_GROWTH_CHANCE = 0.012;
+
+/** 每次升级之间的最小冷却时间（毫秒） */
+const MIN_UPGRADE_COOLDOWN_MS = 5000;
 
 /**
  * 【调整】扩散概率
  * 确保火势能肉眼可见地向外复制蔓延。
  */
-const BASE_SPREAD_CHANCE = 0.01;
+const BASE_SPREAD_CHANCE = 0.00025;
 
 const DIRECTIONS = [
   [1, 0], [-1, 0], [0, 1], [0, -1],
@@ -36,13 +39,19 @@ export function stepFireSpread(
   fireCells: FireCell[],
   wind?: WindConfig
 ): FireCell[] {
-  // 1. 内部升级逻辑 (慢节奏演化)
+  const now = Date.now();
+
+  // 1. 内部升级逻辑 (基于真实时间截的冷却期)
   const activeCells = fireCells.map(cell => {
     const nextCell = { ...cell, age: (cell.age ?? 0) + 1 };
 
-    // 升级概率：取消了之前的动态加成，改为纯随机，让升级变得“佛系”
-    if (Math.random() < BASE_GROWTH_CHANCE && nextCell.intensity < MAX_INTENSITY) {
+    // 距离上次升级（或诞生）过了多久（毫秒）
+    const timeSinceLastUpgrade = now - (nextCell.activatedAt ?? now);
+
+    if (timeSinceLastUpgrade >= MIN_UPGRADE_COOLDOWN_MS && Math.random() < BASE_GROWTH_CHANCE && nextCell.intensity < MAX_INTENSITY) {
+      console.log(`[FIRE] ${nextCell.id} 升级: ${nextCell.intensity} → ${nextCell.intensity + 1} (冷却了 ${(timeSinceLastUpgrade / 1000).toFixed(1)}秒)`);
       nextCell.intensity += 1;
+      nextCell.activatedAt = now; // 用真实时间截重置冷却
     }
     return nextCell;
   });
@@ -52,13 +61,13 @@ export function stepFireSpread(
   // 2. 外部扩散逻辑 (快节奏占地)
   for (const cell of activeCells) {
     // 【调整】：蔓延冷却期改为 2 秒，稍微比之前快一点，配合较高的生长率
-    if (cell.intensity < SPREAD_THRESHOLD || (cell.age ?? 0) < 2) continue;
+    if (cell.intensity < SPREAD_THRESHOLD || (now - (cell.activatedAt ?? now)) < 2000) continue;
 
     // 扩散概率随强度增长，但基数变大
     // 强度 2: 9% | 强度 3: 18% | 强度 4: 27% (大火扩散非常猛)
     const dynamicSpreadChance = BASE_SPREAD_CHANCE * (cell.intensity - 1);
 
-    if (Math.random() > dynamicSpreadChance) continue;
+    // 注意：不在这里做随机判定，统一在风力修正后的 line 88 判定一次
 
     // 随机选 1 个方向
     const dir = DIRECTIONS[Math.floor(Math.random() * DIRECTIONS.length)];

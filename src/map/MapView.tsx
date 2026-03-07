@@ -11,6 +11,7 @@ type Props = {
   styleUrl?: string;
   /** 点击地图空白处的回调（经纬度）*/
   onMapClick?: (lng: number, lat: number) => void;
+  onClick?: (lng: number, lat: number) => void;
   isSidebarOpen?: boolean;
 };
 
@@ -23,6 +24,7 @@ export function MapView({
   zoom = 15,
   styleUrl = "mapbox://styles/mapbox/dark-v11",
   onMapClick,
+  onClick,
   isSidebarOpen = true,
 }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -30,6 +32,11 @@ export function MapView({
   const overlayRef = useRef<MapboxOverlay | null>(null);
   const onMapClickRef = useRef(onMapClick);
   onMapClickRef.current = onMapClick;
+
+  const onClickRef = useRef(onClick);
+  useEffect(() => {
+    onClickRef.current = onClick;
+  }, [onClick]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -57,6 +64,12 @@ export function MapView({
     const overlay = new MapboxOverlay({
       interleaved: false,
       layers,
+      onClick: (info) => {
+        if (info.coordinate) {
+          console.log("DeckGL clicked at lng/lat:", info.coordinate[0], info.coordinate[1]);
+          onClickRef.current?.(info.coordinate[0], info.coordinate[1]);
+        }
+      }
     });
 
     map.addControl(overlay as never);
@@ -73,6 +86,7 @@ export function MapView({
         const lat = e.lngLat.lat;
         console.log("点击位置经纬度:", lng, lat);
         onMapClickRef.current?.(lng, lat);
+        onClickRef.current?.(lng, lat);
       });
 
       const styleLayers = map.getStyle().layers;
@@ -136,7 +150,28 @@ export function MapView({
   }, []);
 
   useEffect(() => {
-    overlayRef.current?.setProps({ layers });
+    if (!containerRef.current || !mapRef.current) return;
+
+    const resizeObserver = new ResizeObserver(() => {
+      mapRef.current?.resize();
+    });
+
+    resizeObserver.observe(containerRef.current);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, []);
+
+  useEffect(() => {
+    overlayRef.current?.setProps({
+      layers,
+      onClick: (info) => {
+        if (info.coordinate) {
+          onClickRef.current?.(info.coordinate[0], info.coordinate[1]);
+        }
+      }
+    });
   }, [layers]);
 
   return (

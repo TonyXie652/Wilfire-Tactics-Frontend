@@ -31,7 +31,7 @@ export type Agent = {
   id: string;
   lng: number;
   lat: number;
-  kind: "resident" | "guide" | "truck";
+  kind: "resident" | "guide" | "truck" | "roadblock";
   status: AgentStatus;
 
   // 移动参数

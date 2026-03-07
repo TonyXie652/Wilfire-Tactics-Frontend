@@ -34,6 +34,7 @@ export function makeAgentsLayer(agents: Agent[], opts: Options = {}): Layer[] {
   const colorGuide: [number, number, number, number] = [16, 185, 129, 235];
   const colorTruck: [number, number, number, number] = [245, 158, 11, 235];
   const colorSelected: [number, number, number, number] = [168, 85, 247, 245];
+  const colorRoadblock: [number, number, number, number] = [156, 163, 175, 235];
 
   // ─── 引导员影响范围脉冲环 ───
   const guides = agents.filter((a) => a.kind === "guide" && a.status !== "dead");
@@ -93,6 +94,7 @@ export function makeAgentsLayer(agents: Agent[], opts: Options = {}): Layer[] {
     getRadius: (d: Agent) => {
       if (d.status === "dead") return 6;
       if (d.status === "safe") return 8;
+      if (d.kind === "roadblock") return 25;
       return d.kind === "guide" ? 18 : d.kind === "truck" ? 25 : 10;
     },
     radiusMinPixels: 3,
@@ -103,6 +105,7 @@ export function makeAgentsLayer(agents: Agent[], opts: Options = {}): Layer[] {
       if (d.status === "safe") return colorResidentSafe;
       if (d.kind === "guide") return colorGuide;
       if (d.kind === "truck") return colorTruck;
+      if (d.kind === "roadblock") return colorRoadblock;
       return colorResident;
     },
 
