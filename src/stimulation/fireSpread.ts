@@ -5,21 +5,21 @@ const SPREAD_THRESHOLD = 2;
 
 const LNG_STEP = 0.00105;
 const LAT_STEP = 0.00055;
-// 间距稍微收紧一点点（从 0.00055 降到 0.0005），让火区连绵感更强
-const MIN_DISTANCE_THRESHOLD = 0.0005;
+// 间距彻底拉大，让火区之间有明显的间隔
+const MIN_DISTANCE_THRESHOLD = 0.0006;
 
 // --- 节奏平衡配置 ---
 /**
- * 【下调】升级概率：从 0.12 降至 0.06
- * 现在一个火点平均需要 15-20 秒才能升到最高级，让颜色演变更有“熬制”感。
+ * 【下调】升级概率：从 0.08 降至 0.02
+ * 让升级速度变慢，适合观察模拟演变。
  */
-const BASE_GROWTH_CHANCE = 0.08;
+const BASE_GROWTH_CHANCE = 0.2; // 继续大幅下调生长速度0.04
 
 /**
- * 【上调】扩散概率：从 0.04 升至 0.09
- * 配合减短的冷却期，火势蔓延会明显变快。
+ * 【下调】扩散概率：从 0.09 降至 0.04
+ * 配合变慢的升级速度，火势蔓延变得更稳定。
  */
-const BASE_SPREAD_CHANCE = 0.09;
+const BASE_SPREAD_CHANCE = 0.6;
 
 const DIRECTIONS = [
   [1, 0], [-1, 0], [0, 1], [0, -1],
@@ -51,12 +51,14 @@ export function stepFireSpread(
 
   // 2. 外部扩散逻辑 (快节奏占地)
   for (const cell of activeCells) {
-    // 【优化】：冷却期从 3 秒降为 1 秒。新火点几乎落地就能开始尝试感染周围。
-    if (cell.intensity < SPREAD_THRESHOLD || (cell.age ?? 0) < 1) continue;
+    // 【调整】：蔓延冷却期改为 2 秒，稍微比之前快一点，配合较高的生长率
+    if (cell.intensity < SPREAD_THRESHOLD || (cell.age ?? 0) < 2) continue;
 
     // 扩散概率随强度增长，但基数变大
     // 强度 2: 9% | 强度 3: 18% | 强度 4: 27% (大火扩散非常猛)
-    const dynamicSpreadChance = (wind?.baseSpreadChance ?? BASE_SPREAD_CHANCE) * (cell.intensity - 1);
+    const dynamicSpreadChance = BASE_SPREAD_CHANCE * (cell.intensity - 1);
+
+    if (Math.random() > dynamicSpreadChance) continue;
 
     // 随机选 1 个方向
     const dir = DIRECTIONS[Math.floor(Math.random() * DIRECTIONS.length)];
@@ -83,11 +85,11 @@ export function stepFireSpread(
     if (Math.random() > finalSpreadChance) continue;
 
     const neighborPos: [number, number] = [
-      cell.position[0] + dir[0] * LNG_STEP * 0.85, // 缩短步长，增加紧凑感
-      cell.position[1] + dir[1] * LAT_STEP * 0.85
+      cell.position[0] + dir[0] * LNG_STEP * 0.65, // 拉开更大的步长，火点生得更远
+      cell.position[1] + dir[1] * LAT_STEP * 0.65
     ];
 
-    const jitter = 0.12;
+    const jitter = 0.02; // 极小的 jitter 偏差，完全杜绝越出圆圈
     const finalPos: [number, number] = [
       neighborPos[0] + (Math.random() - 0.5) * LNG_STEP * jitter,
       neighborPos[1] + (Math.random() - 0.5) * LAT_STEP * jitter
