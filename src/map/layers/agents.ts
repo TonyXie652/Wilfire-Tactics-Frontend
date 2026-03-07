@@ -87,17 +87,17 @@ export function makeAgentsLayer(agents: Agent[], opts: Options = {}): Layer[] {
   const agentDots = new ScatterplotLayer<Agent>({
     id: "agents",
     data: agents,
-    getPosition: (d) => [d.lng, d.lat, 5],
+    getPosition: (d: Agent) => [d.lng, d.lat, 5],
 
     radiusUnits: "meters",
-    getRadius: (d) => {
+    getRadius: (d: Agent) => {
       if (d.status === "dead") return 10;
       if (d.status === "safe") return 15;
       return d.kind === "guide" ? 30 : d.kind === "truck" ? 40 : 20;
     },
     radiusMinPixels: 4,
 
-    getFillColor: (d) => {
+    getFillColor: (d: Agent) => {
       if (selectedAgentId && d.id === selectedAgentId) return colorSelected;
       if (d.status === "dead") return colorResidentDead;
       if (d.status === "safe") return colorResidentSafe;
@@ -107,12 +107,12 @@ export function makeAgentsLayer(agents: Agent[], opts: Options = {}): Layer[] {
     },
 
     stroked: true,
-    getLineColor: (d) => {
+    getLineColor: (d: Agent) => {
       if (d.followingGuideId) return [16, 185, 129, 255];
       return [255, 255, 255, 200];
     },
     lineWidthMinPixels: 1,
-    getLineWidth: (d) => (d.followingGuideId ? 3 : 1),
+    getLineWidth: (d: Agent) => (d.followingGuideId ? 3 : 1),
     lineWidthUnits: "pixels" as const,
 
     pickable: true,

@@ -21,18 +21,43 @@ const FOLLOW_GUIDE_CHANCE = 0.6;
 
 /** 每多少 tick 重新算一次路径 */
 const REPATH_INTERVAL = 8;
+/** 轨迹最多保留多少帧，避免历史轨迹无限增长 */
+const MAX_PATH_HISTORY = 200;
 
-/** 火焰致死范围（经纬度单位，约 50 米） */
-const FIRE_KILL_RADIUS = 0.0005;
+/** 火焰致死范围（经纬度单位，约 150 米） */
+const FIRE_KILL_RADIUS = 0.0015;
 
-/** 到达安全点的距离阈值（经纬度单位，约 30 米） */
-const SAFE_ARRIVAL_RADIUS = 0.0003;
+/** 到达安全点的距离阈值（经纬度单位，约 100 米） */
+const SAFE_ARRIVAL_RADIUS = 0.001;
 
 /** 默认居民速度 */
 export const DEFAULT_RESIDENT_SPEED = 0.00004;
 
 /** 默认引导员速度（比居民快一点） */
 export const DEFAULT_GUIDE_SPEED = 0.00005;
+
+/* ──────────── 缓存 ──────────── */
+
+const graphCache = new WeakMap<Scenario, Graph>();
+const nodeMapCache = new WeakMap<Scenario, Map<string, { id: string; lng: number; lat: number }>>();
+
+function getCachedGraph(scenario: Scenario): Graph {
+    let graph = graphCache.get(scenario);
+    if (!graph) {
+        graph = buildGraph(scenario);
+        graphCache.set(scenario, graph);
+    }
+    return graph;
+}
+
+function getCachedNodeMap(scenario: Scenario): Map<string, { id: string; lng: number; lat: number }> {
+    let nodeMap = nodeMapCache.get(scenario);
+    if (!nodeMap) {
+        nodeMap = new Map(scenario.nodes.map((n) => [n.id, n] as const));
+        nodeMapCache.set(scenario, nodeMap);
+    }
+    return nodeMap;
+}
 
 /* ──────────── 辅助函数 ──────────── */
 
@@ -80,7 +105,8 @@ export function createResident(
     id: string,
     lng: number,
     lat: number,
-    reactionDelay = 3
+    reactionDelay = 3,
+    spawnTick?: number
 ): Agent {
     return {
         id,
@@ -94,6 +120,7 @@ export function createResident(
         pathHistory: [],
         reactionDelay,
         ticksSinceStart: 0,
+        spawnTick,
     };
 }
 
@@ -139,8 +166,8 @@ export function stepAgents(
     guideDecisions: GuideDecision[] = [],
     blockedEdges: Set<string> = new Set()
 ): Agent[] {
-    const graph = buildGraph(scenario);
-    const nodeMap = new Map(scenario.nodes.map((n) => [n.id, n] as const));
+    const graph = getCachedGraph(scenario);
+    const nodeMap = getCachedNodeMap(scenario);
 
     // 找出所有引导员及其决策
     const guideAgents = agents.filter((a) => a.kind === "guide" && a.status !== "dead");
@@ -151,12 +178,19 @@ export function stepAgents(
     return agents.map((agent) => {
         const a = { ...agent, pathHistory: [...agent.pathHistory] };
         a.ticksSinceStart = tick;
-
-        // 记录当前位置到历史轨迹
-        a.pathHistory.push([a.lng, a.lat]);
+        if (a.kind === "resident" && a.spawnTick === undefined) {
+            // 首次进入引擎时，近似认为出生在上一 tick，兼容运行中新增
+            a.spawnTick = Math.max(0, tick - 1);
+        }
 
         // ──────── 已经死了或安全了，不更新 ────────
         if (a.status === "safe" || a.status === "dead") return a;
+
+        // 记录当前位置到历史轨迹（只对还活着的 agent）
+        a.pathHistory.push([a.lng, a.lat]);
+        if (a.pathHistory.length > MAX_PATH_HISTORY) {
+            a.pathHistory.splice(0, a.pathHistory.length - MAX_PATH_HISTORY);
+        }
 
         // ──────── 检查是否被火烧死 ────────
         if (isInFire(a.lng, a.lat, fireCells)) {
@@ -165,16 +199,48 @@ export function stepAgents(
             return a;
         }
 
-        // ──────── 检查是否到达安全点 ────────
+        // ──────── 检查是否到达安全点（优先于 panic，避免快到安全点又被拉走） ────────
         if (isNearSafePoint(a.lng, a.lat, scenario)) {
             a.status = "safe";
             console.log(`[Agent] ${a.id} 安全到达！`);
             return a;
         }
 
+        // ──────── 恐慌机制 (Panic Override) —— 只对居民生效，引导员不受影响 ────────
+        if (a.kind !== "guide") {
+            const PANIC_RADIUS = FIRE_KILL_RADIUS * 1.2;
+            let panicVecX = 0;
+            let panicVecY = 0;
+
+            for (const cell of fireCells) {
+                const dist = distLngLat(a.lng, a.lat, cell.position[0], cell.position[1]);
+                if (dist < PANIC_RADIUS && cell.intensity >= 1) {
+                    const weight = 1 / (dist * dist + 0.000001);
+                    panicVecX += (a.lng - cell.position[0]) * weight;
+                    panicVecY += (a.lat - cell.position[1]) * weight;
+                }
+            }
+
+            if (panicVecX !== 0 || panicVecY !== 0) {
+                const mag = Math.sqrt(panicVecX * panicVecX + panicVecY * panicVecY);
+                if (mag > 0) {
+                    const panicSpeed = a.speed * 1.5;
+                    a.lng += (panicVecX / mag) * panicSpeed;
+                    a.lat += (panicVecY / mag) * panicSpeed;
+
+                    a.path = [];
+                    a.pathIndex = 0;
+                    a.followingGuideId = undefined;
+                    a.status = "moving";
+
+                    return a;
+                }
+            }
+        }
+
         // ──────── 引导员逻辑 ────────
         if (a.kind === "guide") {
-            return updateGuide(a, scenario, fireCells, graph, nodeMap, guideDecisionMap, blockedEdges);
+            return updateGuide(a, scenario, fireCells, graph, nodeMap, guideDecisionMap, tick, blockedEdges);
         }
 
         // ──────── 居民逻辑 ────────
@@ -183,6 +249,17 @@ export function stepAgents(
             guideAgents, guideDecisionMap, tick, blockedEdges
         );
     });
+}
+
+/* ──────────── 辅助函数 ──────────── */
+
+/** 获取重新寻路时的起点：优先用当前正在前往的节点，否则用最近的节点 */
+function getRepathStartNodeId(agent: Agent, scenario: Scenario): string | null {
+    if (agent.path.length > 0 && agent.pathIndex < agent.path.length) {
+        return agent.path[agent.pathIndex];
+    }
+    const nearest = findNearestNode(agent.lng, agent.lat, scenario.nodes);
+    return nearest ? nearest.id : null;
 }
 
 /* ──────────── 引导员更新 ──────────── */
@@ -194,6 +271,7 @@ function updateGuide(
     graph: Graph,
     nodeMap: Map<string, { id: string; lng: number; lat: number }>,
     guideDecisionMap: Map<string, GuideDecision>,
+    tick: number,
     blockedEdges: Set<string>
 ): Agent {
     const decision = guideDecisionMap.get(guide.id);
@@ -204,40 +282,60 @@ function updateGuide(
             (sp) => sp.id === decision.targetSafePointId
         );
         if (targetSP) {
-            // 重新计算到目标安全点的路径
-            const nearestNode = findNearestNode(guide.lng, guide.lat, scenario.nodes);
-            if (nearestNode) {
-                guide.path = astar(
-                    nearestNode.id,
-                    targetSP.lng,
-                    targetSP.lat,
-                    graph,
-                    scenario.nodes,
-                    fireCells,
-                    blockedEdges
-                );
-                guide.pathIndex = 0;
-                guide.currentNodeId = nearestNode.id;
+            const needsRepath =
+                guide.path.length === 0 ||
+                guide.pathIndex >= guide.path.length ||
+                guide.targetSafePointId !== decision.targetSafePointId ||
+                tick % REPATH_INTERVAL === 0;
+
+            if (needsRepath) {
+                const startNodeId = getRepathStartNodeId(guide, scenario);
+                if (startNodeId) {
+                    const newPath = astar(
+                        startNodeId,
+                        targetSP.lng,
+                        targetSP.lat,
+                        graph,
+                        scenario.nodes,
+                        fireCells,
+                        blockedEdges
+                    );
+                    if (newPath.length > 0) {
+                        guide.path = newPath;
+                        guide.pathIndex = 0;
+                        guide.currentNodeId = startNodeId;
+                        guide.targetSafePointId = decision.targetSafePointId;
+                    }
+                }
             }
         }
-    }
+    } else {
+        // 如果没有决策，走向最近的安全点
+        const needsRepath =
+            guide.path.length === 0 ||
+            guide.pathIndex >= guide.path.length ||
+            tick % REPATH_INTERVAL === 0;
 
-    // 如果还没有路径，走向最近的安全点
-    if (guide.path.length === 0) {
-        const nearestNode = findNearestNode(guide.lng, guide.lat, scenario.nodes);
-        if (nearestNode) {
-            const sp = findNearestSafePoint(nearestNode.id, scenario.safePoints, scenario.nodes);
-            if (sp) {
-                guide.path = astar(
-                    nearestNode.id,
-                    sp.lng,
-                    sp.lat,
-                    graph,
-                    scenario.nodes,
-                    fireCells,
-                    blockedEdges
-                );
-                guide.pathIndex = 0;
+        if (needsRepath) {
+            const startNodeId = getRepathStartNodeId(guide, scenario);
+            if (startNodeId) {
+                const sp = findNearestSafePoint(startNodeId, scenario.safePoints, scenario.nodes);
+                if (sp) {
+                    const newPath = astar(
+                        startNodeId,
+                        sp.lng,
+                        sp.lat,
+                        graph,
+                        scenario.nodes,
+                        fireCells,
+                        blockedEdges
+                    );
+                    if (newPath.length > 0) {
+                        guide.path = newPath;
+                        guide.pathIndex = 0;
+                        guide.currentNodeId = startNodeId;
+                    }
+                }
             }
         }
     }
@@ -262,16 +360,75 @@ function updateResident(
     blockedEdges: Set<string>
 ): Agent {
     // ──── 检查附近是否有引导员 ────
-    const nearbyGuide = findNearbyGuide(resident, guideAgents);
+    let nearbyGuide = findNearbyGuide(resident, guideAgents);
 
-    // ──── 不在引导员范围内 → 不动 ────
+    // 如果已经有跟随的引导员，且还在范围内，就保持锁定，防止在多个引导员之间反复横跳
+    if (resident.followingGuideId) {
+        const currentGuide = guideAgents.find(g => g.id === resident.followingGuideId);
+        if (currentGuide && haversine(resident.lng, resident.lat, currentGuide.lng, currentGuide.lat) <= GUIDE_INFLUENCE_RADIUS) {
+            nearbyGuide = currentGuide;
+        }
+    }
+
+    // ──── 不在引导员范围内 ────
     if (!nearbyGuide) {
-        // 如果之前在跟随，清除状态，停下来等待
+        // 如果之前在跟随，清除状态
         if (resident.followingGuideId) {
             resident.followingGuideId = undefined;
             resident.path = [];
+        }
+
+        const hasFire = fireCells.length > 0;
+        if (!hasFire) {
+            // 无火无引导员 → 保持 idle
             resident.status = "idle";
-            console.log(`[Agent] ${resident.id} 离开引导员范围，停止移动`);
+            return resident;
+        }
+
+        // 地图上有火，开始自主寻路逃生
+        if (resident.status === "idle") {
+            const spawnTick = resident.spawnTick ?? 0;
+            if (tick - spawnTick < resident.reactionDelay) {
+                return resident;
+            }
+            resident.status = "moving";
+            console.log(`[Agent] ${resident.id} 察觉到火灾，开始自主撤离！`);
+        }
+
+        const nearestNode = findNearestNode(resident.lng, resident.lat, scenario.nodes);
+        const targetSP = nearestNode ? findNearestSafePoint(nearestNode.id, scenario.safePoints, scenario.nodes) : null;
+
+        if (targetSP) {
+            const needsRepath =
+                resident.path.length === 0 ||
+                resident.pathIndex >= resident.path.length ||
+                tick % REPATH_INTERVAL === 0;
+
+            if (needsRepath) {
+                const startNodeId = getRepathStartNodeId(resident, scenario);
+                if (startNodeId) {
+                    const newPath = astar(
+                        startNodeId,
+                        targetSP.lng,
+                        targetSP.lat,
+                        graph,
+                        scenario.nodes,
+                        fireCells,
+                        blockedEdges
+                    );
+                    if (newPath.length > 0) {
+                        resident.path = newPath;
+                        resident.pathIndex = 0;
+                        resident.currentNodeId = startNodeId;
+                        resident.targetSafePointId = targetSP.id;
+                    } else if (resident.path.length === 0) {
+                        // A* 无路可走 → 回退到 idle 等待下次重算
+                        resident.status = "idle";
+                        return resident;
+                    }
+                }
+            }
+            moveAlongPath(resident, nodeMap);
         }
         return resident;
     }
@@ -280,54 +437,69 @@ function updateResident(
 
     // 反应延迟
     if (resident.status === "idle") {
-        if (tick < resident.reactionDelay) {
+        const spawnTick = resident.spawnTick ?? 0;
+        if (tick - spawnTick < resident.reactionDelay) {
             return resident;
         }
         resident.status = "moving";
         console.log(`[Agent] ${resident.id} 被引导员 ${nearbyGuide.id} 激活！`);
     }
 
-    // 决定是否跟随这个引导员
-    if (!resident.followingGuideId) {
-        if (Math.random() < FOLLOW_GUIDE_CHANCE) {
-            resident.followingGuideId = nearbyGuide.id;
-            console.log(
-                `[Agent] ${resident.id} 开始跟随引导员 ${nearbyGuide.id}`
-            );
-        }
+    // 只在首次激活时掷一次跟随概率
+    if (resident.willFollowGuide === undefined) {
+        resident.willFollowGuide = Math.random() < FOLLOW_GUIDE_CHANCE;
+    }
+    if (!resident.followingGuideId && resident.willFollowGuide) {
+        resident.followingGuideId = nearbyGuide.id;
+        console.log(
+            `[Agent] ${resident.id} 开始跟随引导员 ${nearbyGuide.id}`
+        );
     }
 
     if (resident.followingGuideId === nearbyGuide.id) {
-        // 跟随引导员：朝引导员位置移动
-        moveToward(resident, nearbyGuide.lng, nearbyGuide.lat);
-
-        // 引导员有 AI 指定的安全点 → 居民用同一个目标走 A*
+        // 引导员有 AI 指定的安全点 → 跟随者共享目标，但按间隔重算路径
         const decision = guideDecisionMap.get(nearbyGuide.id);
         if (decision) {
             const targetSP = scenario.safePoints.find(
                 (sp) => sp.id === decision.targetSafePointId
             );
             if (targetSP) {
-                const nearestNode = findNearestNode(
-                    resident.lng,
-                    resident.lat,
-                    scenario.nodes
-                );
-                if (nearestNode) {
-                    resident.path = astar(
-                        nearestNode.id,
-                        targetSP.lng,
-                        targetSP.lat,
-                        graph,
-                        scenario.nodes,
-                        fireCells,
-                        blockedEdges
-                    );
-                    resident.pathIndex = 0;
+                const needsRepath =
+                    resident.path.length === 0 ||
+                    resident.pathIndex >= resident.path.length ||
+                    resident.targetSafePointId !== decision.targetSafePointId ||
+                    tick % REPATH_INTERVAL === 0;
+
+                if (needsRepath) {
+                    const startNodeId = getRepathStartNodeId(resident, scenario);
+                    if (startNodeId) {
+                        const newPath = astar(
+                            startNodeId,
+                            targetSP.lng,
+                            targetSP.lat,
+                            graph,
+                            scenario.nodes,
+                            fireCells,
+                            blockedEdges
+                        );
+                        if (newPath.length > 0) {
+                            resident.path = newPath;
+                            resident.pathIndex = 0;
+                            resident.currentNodeId = startNodeId;
+                            resident.targetSafePointId = decision.targetSafePointId;
+                        } else if (resident.path.length === 0) {
+                            // 引导目标暂时不可达：回退为贴近引导员，避免卡住
+                            moveToward(resident, nearbyGuide.lng, nearbyGuide.lat);
+                            return resident;
+                        }
+                    }
                 }
+                moveAlongPath(resident, nodeMap);
+                return resident;
             }
         }
-
+        // 没有 AI 目标时，退化为近距离跟随引导员
+        moveToward(resident, nearbyGuide.lng, nearbyGuide.lat);
         return resident;
     }
 
@@ -352,10 +524,10 @@ function updateResident(
             tick % REPATH_INTERVAL === 0;
 
         if (needsRepath) {
-            const nearestNode = findNearestNode(resident.lng, resident.lat, scenario.nodes);
-            if (nearestNode) {
-                resident.path = astar(
-                    nearestNode.id,
+            const startNodeId = getRepathStartNodeId(resident, scenario);
+            if (startNodeId) {
+                const newPath = astar(
+                    startNodeId,
                     targetSP.lng,
                     targetSP.lat,
                     graph,
@@ -363,8 +535,16 @@ function updateResident(
                     fireCells,
                     blockedEdges
                 );
-                resident.pathIndex = 0;
-                resident.currentNodeId = nearestNode.id;
+                if (newPath.length > 0) {
+                    resident.path = newPath;
+                    resident.pathIndex = 0;
+                    resident.currentNodeId = startNodeId;
+                    resident.targetSafePointId = targetSP.id;
+                } else if (resident.path.length === 0) {
+                    // A* 无路可走 → 回退到 idle 等待下次重算
+                    resident.status = "idle";
+                    return resident;
+                }
             }
         }
 

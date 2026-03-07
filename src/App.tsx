@@ -9,6 +9,9 @@ import { stepFireSpread } from "./sim/fireSpread";
 import { stepAgents, createResident, createGuide } from "./sim/agentEngine";
 import { getGuideDecisions, resetGuideSessions } from "./sim/guideAgent";
 import { EvacuationDialog } from "./ui/EvacuationDialog";
+import { Toolbar } from "./ui/Toolbar";
+import type { ToolType } from "./ui/Toolbar";
+import { StatsPanel } from "./ui/StatsPanel";
 import type { Scenario, Agent, FireCell, GuideDecision } from "./app/types";
 
 // ─── 场景数据（来自队友手动标点） ───
@@ -185,6 +188,16 @@ export default function App() {
   const [mode, setMode] = useState<InteractionMode>("idle");
   const [selectedGuideId, setSelectedGuideId] = useState<string | null>(null);
   const guideDecisionsRef = useRef<GuideDecision[]>([]);
+  const agentsRef = useRef<Agent[]>(initialAgents);
+  const fireCellsRef = useRef<FireCell[]>(initialFire);
+  const simulationEpochRef = useRef(0);
+  const decisionRequestSeqRef = useRef(0);
+  const decisionAppliedSeqRef = useRef(0);
+  const decisionInFlightRef = useRef(false);
+
+  // 队友设计的 UI 状态
+  const [activeTool, setActiveTool] = useState<ToolType>("none");
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
   // 队友的 Node 搜索调试工具
   const [testNodeId, setTestNodeId] = useState("");
@@ -202,18 +215,39 @@ export default function App() {
 
   // ─── 模拟 tick 循环 ───
   useEffect(() => {
+    agentsRef.current = agents;
+  }, [agents]);
+
+  useEffect(() => {
+    fireCellsRef.current = fireCells;
+  }, [fireCells]);
+
+  useEffect(() => {
     if (isPaused) return;
     const timer = window.setInterval(() => {
       setTick((prev) => {
         const newTick = prev + 1;
+        let nextFireCells = fireCellsRef.current;
 
         // 1. 火势扩散
-        setFireCells((fc) => stepFireSpread(fc, newTick));
+        setFireCells((fc) => {
+          nextFireCells = stepFireSpread(fc);
+          fireCellsRef.current = nextFireCells;
+          return nextFireCells;
+        });
 
         // 2. Agent 移动
-        setAgents((prevAgents) =>
-          stepAgents(prevAgents, scenario, fireCells, newTick, guideDecisionsRef.current)
-        );
+        setAgents((prevAgents) => {
+          const nextAgents = stepAgents(
+            prevAgents,
+            scenario,
+            nextFireCells,
+            newTick,
+            guideDecisionsRef.current
+          );
+          agentsRef.current = nextAgents;
+          return nextAgents;
+        });
 
         // 3. 每 N tick 请求 AI 决策
         if (newTick % AI_DECISION_INTERVAL === 0) {
@@ -228,14 +262,32 @@ export default function App() {
 
   const requestGuideDecisions = useCallback(
     async (currentTick: number) => {
+      if (decisionInFlightRef.current) return;
+      decisionInFlightRef.current = true;
+      const requestSeq = ++decisionRequestSeqRef.current;
+      const requestEpoch = simulationEpochRef.current;
       try {
-        const decisions = await getGuideDecisions(agents, scenario, fireCells, currentTick);
-        if (decisions.length > 0) guideDecisionsRef.current = decisions;
+        const decisions = await getGuideDecisions(
+          agentsRef.current,
+          scenario,
+          fireCellsRef.current,
+          currentTick
+        );
+        if (simulationEpochRef.current !== requestEpoch) return;
+        if (requestSeq < decisionAppliedSeqRef.current) return;
+
+        decisionAppliedSeqRef.current = requestSeq;
+        // 即使为空也要覆盖，避免长期沿用陈旧决策
+        guideDecisionsRef.current = decisions;
       } catch (err) {
         console.error("[App] Guide decision error:", err);
+      } finally {
+        if (simulationEpochRef.current === requestEpoch) {
+          decisionInFlightRef.current = false;
+        }
       }
     },
-    [agents, fireCells]
+    []
   );
 
   // ─── 单击 Agent（选中/取消选中） ───
@@ -269,6 +321,54 @@ export default function App() {
   // ─── 点击地图空白处 ───
   const handleMapClick = useCallback(
     (lng: number, lat: number) => {
+      // 工具栏放置
+      if (activeTool !== "none") {
+        if (activeTool === "resident") {
+          const count = Math.floor(Math.random() * 6) + 5;
+          const newAgents: Agent[] = [];
+          for (let i = 0; i < count; i++) {
+            newAgents.push(
+              createResident(
+                `agent-${Date.now()}-${i}`,
+                lng + (Math.random() - 0.5) * 0.004,
+                lat + (Math.random() - 0.5) * 0.003,
+                Math.floor(Math.random() * 5),
+                tick
+              )
+            );
+          }
+          setAgents((prev) => [...prev, ...newAgents]);
+        } else if (activeTool === "guide") {
+          setAgents((prev) => [...prev, createGuide(`guide-${Date.now()}`, lng, lat)]);
+        } else if (activeTool === "roadblock") {
+          const newAgent: Agent = {
+            id: `roadblock-${Date.now()}`,
+            lng,
+            lat,
+            kind: "roadblock" as any,
+            status: "idle",
+            speed: 0,
+            path: [],
+            pathIndex: 0,
+            pathHistory: [],
+            reactionDelay: 0,
+            ticksSinceStart: 0,
+          };
+          setAgents((prev) => [...prev, newAgent]);
+        } else if (activeTool === "fire") {
+          const newFire: FireCell = {
+            id: `fire-${Date.now()}`,
+            position: [lng, lat],
+            intensity: 1,
+            size: 80,
+            age: 0,
+            activatedAt: 0,
+          };
+          setFireCells((prev) => [...prev, newFire]);
+        }
+        return;
+      }
+
       if (mode === "placing-guide" && selectedGuideId) {
         setAgents((prev) =>
           prev.map((a) =>
@@ -285,7 +385,7 @@ export default function App() {
         setMode("idle");
       }
     },
-    [mode, selectedGuideId]
+    [mode, selectedGuideId, activeTool, tick]
   );
 
   // ─── Esc 键取消选中 ───
@@ -317,9 +417,15 @@ export default function App() {
     setTick(0);
     setFireCells(initialFire);
     setAgents(initialAgents);
+    fireCellsRef.current = initialFire;
+    agentsRef.current = initialAgents;
     setMode("idle");
     setSelectedGuideId(null);
     guideDecisionsRef.current = [];
+    simulationEpochRef.current += 1;
+    decisionRequestSeqRef.current = 0;
+    decisionAppliedSeqRef.current = 0;
+    decisionInFlightRef.current = false;
     resetGuideSessions();
   }, []);
 
@@ -334,7 +440,11 @@ export default function App() {
     return { total: residents.length, safe, dead, moving };
   }, [agents]);
 
-  const isSimDone = stats.moving === 0 && tick > 0;
+  const isSimDone = useMemo(() => {
+    const residents = agents.filter((a) => a.kind === "resident");
+    if (tick <= 0 || residents.length === 0) return false;
+    return residents.every((a) => a.status === "safe" || a.status === "dead");
+  }, [agents, tick]);
 
   // Node 搜索（队友的调试工具）
   const testNode = useMemo(() => scenario.nodes.find((n) => n.id === testNodeId), [testNodeId]);
@@ -376,100 +486,130 @@ export default function App() {
   })();
 
   return (
-    <div style={{ height: "100vh", width: "100vw" }}>
-      {/* ─── 控制栏 ─── */}
-      <div style={{
-        position: "absolute", top: 16, right: 16, zIndex: 10,
-        display: "flex", gap: 8, alignItems: "center",
-      }}>
-        <input
-          type="text"
-          placeholder="搜索 Node ID (如 n25)"
-          value={testNodeId}
-          onChange={(e) => setTestNodeId(e.target.value.trim())}
-          style={{
-            padding: "8px 12px", fontSize: "14px",
-            borderRadius: "6px", border: "1px solid #444",
-            background: "rgba(0,0,0,0.7)", color: "white", outline: "none",
-          }}
+    <div style={{ height: "100vh", width: "100vw", display: "flex", flexDirection: "row" }}>
+      {/* ── 左侧：地图 + 统计面板 ── */}
+      <div style={{ flex: 1, position: "relative", overflow: "hidden" }}>
+        <StatsPanel
+          tick={tick}
+          fireCellsCount={fireCells.length}
+          totalResidents={stats.total}
+          safeCount={stats.safe}
+          deadCount={stats.dead}
+          movingCount={stats.moving}
+          isSimDone={isSimDone}
+          hintText={hintText}
         />
-        <button
-          onClick={() => setIsPaused((p) => !p)}
-          style={{
-            padding: "10px 16px", fontSize: "14px",
-            background: isPaused ? "#2e7d32" : "#b71c1c",
-            color: "white", border: "1px solid #444",
-            borderRadius: "6px", cursor: "pointer",
-          }}
-        >
-          {isPaused ? "▶ Start" : "⏸ Pause"}
-        </button>
-        <button
-          onClick={handleReset}
-          style={{
-            padding: "10px 16px", fontSize: "14px",
-            background: "#424242", color: "white",
-            border: "1px solid #444", borderRadius: "6px", cursor: "pointer",
-          }}
-        >
-          ↺ Reset
-        </button>
+
+        {mode === "show-dialog" && selectedGuideId && (
+          <EvacuationDialog
+            guideId={selectedGuideId}
+            position={{ x: window.innerWidth / 2, y: window.innerHeight / 2 - 50 }}
+            onConfirm={handleEvacuationConfirm}
+            onCancel={handleEvacuationCancel}
+          />
+        )}
+
+        <MapView layers={layers} onMapClick={handleMapClick} />
       </div>
 
-      {/* ─── 状态面板 ─── */}
-      <div style={{
-        position: "absolute", top: 16, left: 16, zIndex: 10,
-        background: "rgba(0,0,0,0.75)", color: "white",
-        padding: "12px 16px", borderRadius: "8px",
-        fontSize: "13px", lineHeight: 1.6, minWidth: 180,
-        backdropFilter: "blur(8px)",
-      }}>
-        <div style={{ fontWeight: 700, marginBottom: 4, fontSize: 15 }}>
-          🔥 Wildfire Tactics
-        </div>
-        <div>Tick: {tick}</div>
-        <div>🔥 Fire cells: {fireCells.length}</div>
-        <div>👥 Residents: {stats.total}</div>
-        <div style={{ color: "#4caf50" }}>✅ Safe: {stats.safe}</div>
-        <div style={{ color: "#f44336" }}>💀 Dead: {stats.dead}</div>
-        <div style={{ color: "#2196f3" }}>🏃 Moving: {stats.moving}</div>
-        {stats.total > 0 && (
-          <div style={{ marginTop: 4, fontWeight: 600 }}>
-            Evacuation Rate: {((stats.safe / stats.total) * 100).toFixed(0)}%
-          </div>
-        )}
-        {isSimDone && (
-          <div style={{
-            marginTop: 8, padding: "6px 10px",
-            background: stats.dead === 0 ? "#2e7d32" : "#b71c1c",
-            borderRadius: 4, textAlign: "center", fontWeight: 700,
-          }}>
-            {stats.dead === 0 ? "🎉 ALL SAFE!" : `Simulation Complete`}
-          </div>
-        )}
-        {hintText && (
-          <div style={{
-            marginTop: 8, padding: "6px 8px",
-            background: "rgba(16, 185, 129, 0.15)",
-            border: "1px solid rgba(16, 185, 129, 0.3)",
-            borderRadius: 4, fontSize: 11, color: "#10b981",
-          }}>
-            {hintText}
-          </div>
+      {/* ── 右侧：Workspace 侧边栏 ── */}
+      <div
+        style={{
+          width: isSidebarOpen ? "350px" : "60px",
+          minWidth: isSidebarOpen ? "350px" : "60px",
+          transition: "width 0.3s ease",
+          background: "#1a1a1a",
+          borderLeft: "1px solid #333",
+          display: "flex",
+          flexDirection: "column",
+          padding: isSidebarOpen ? "20px" : "20px 0",
+          boxSizing: "border-box" as const,
+          overflowY: "auto" as const,
+          overflowX: "hidden" as const,
+          position: "relative",
+          zIndex: 50,
+        }}
+      >
+        <button
+          onClick={() => setIsSidebarOpen((prev) => !prev)}
+          style={{
+            position: "absolute",
+            top: "20px",
+            left: isSidebarOpen ? "20px" : "50%",
+            transform: isSidebarOpen ? "none" : "translateX(-50%)",
+            background: "transparent",
+            border: "none",
+            color: "#aaa",
+            cursor: "pointer",
+            fontSize: "18px",
+            zIndex: 20,
+          }}
+          title={isSidebarOpen ? "Collapse Workspace" : "Expand Workspace"}
+        >
+          {isSidebarOpen ? "▶" : "◀"}
+        </button>
+
+        {isSidebarOpen && (
+          <>
+            <h2 style={{ color: "#fff", margin: "0 0 20px 30px", fontSize: "18px", width: "100%" }}>Workspace</h2>
+
+            <div style={{ marginBottom: "20px", display: "flex", flexDirection: "column", gap: 10 }}>
+              <button
+                onClick={() => setIsPaused((p) => !p)}
+                style={{
+                  width: "100%",
+                  padding: "12px 16px",
+                  fontSize: "14px",
+                  fontWeight: "bold",
+                  background: isPaused ? "#2e7d32" : "#b71c1c",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "6px",
+                  cursor: "pointer",
+                  transition: "background 0.2s",
+                }}
+              >
+                {isPaused ? "▶ Resume Fire" : "⏸ Pause Fire"}
+              </button>
+
+              <button
+                onClick={handleReset}
+                style={{
+                  width: "100%",
+                  padding: "10px 16px",
+                  fontSize: "14px",
+                  background: "#424242",
+                  color: "white",
+                  border: "1px solid #444",
+                  borderRadius: "6px",
+                  cursor: "pointer",
+                }}
+              >
+                ↺ Reset
+              </button>
+
+              <input
+                type="text"
+                placeholder="搜索 Node ID (如 n25)"
+                value={testNodeId}
+                onChange={(e) => setTestNodeId(e.target.value.trim())}
+                style={{
+                  width: "calc(100% - 24px)",
+                  padding: "8px 12px",
+                  fontSize: "14px",
+                  borderRadius: "6px",
+                  border: "1px solid #444",
+                  background: "rgba(0,0,0,0.7)",
+                  color: "white",
+                  outline: "none",
+                }}
+              />
+            </div>
+
+            <Toolbar activeTool={activeTool} onSelectTool={setActiveTool} />
+          </>
         )}
       </div>
-
-      {/* ─── 撤离对话框 ─── */}
-      {mode === "show-dialog" && selectedGuideId && (
-        <EvacuationDialog
-          guideId={selectedGuideId}
-          position={{ x: window.innerWidth / 2, y: window.innerHeight / 2 - 50 }}
-          onConfirm={handleEvacuationConfirm}
-          onCancel={handleEvacuationCancel}
-        />
-      )}
-
-      <MapView layers={layers} onMapClick={handleMapClick} />
     </div>
   );
 }

@@ -16,7 +16,6 @@ type GuideSession = {
 const guideSessions = new Map<string, GuideSession>();
 
 // 初始化标记
-let isInitialized = false;
 let globalAssistantId: string | null = null;
 
 /* ──────────── 工具定义 ──────────── */
@@ -197,28 +196,33 @@ export async function getGuideDecisions(
 
     const decisions: GuideDecision[] = [];
 
-    for (const guide of guides) {
-        try {
-            const decision = await getGuideDecision(
-                guide,
-                agents,
-                scenario,
-                fireCells,
-                tick
-            );
-            if (decision) {
-                decisions.push(decision);
-            }
-        } catch (err) {
-            console.error(`[Backboard] Guide ${guide.id} decision error:`, err);
-            // 出错了就用默认策略：走最近的安全点
-            if (scenario.safePoints.length > 0) {
-                decisions.push({
-                    guideId: guide.id,
-                    targetSafePointId: scenario.safePoints[0].id,
-                    reason: "AI 不可用，使用默认安全点",
-                });
-            }
+    // 并行请求所有引导员的 AI 决策
+    const results = await Promise.allSettled(
+        guides.map((guide) =>
+            getGuideDecision(guide, agents, scenario, fireCells, tick)
+                .then((decision) => {
+                    if (decision) {
+                        return decision;
+                    }
+                    return null;
+                })
+                .catch((err) => {
+                    console.error(`[Backboard] Guide ${guide.id} decision error:`, err);
+                    if (scenario.safePoints.length > 0) {
+                        return {
+                            guideId: guide.id,
+                            targetSafePointId: scenario.safePoints[0].id,
+                            reason: "AI 不可用，使用默认安全点",
+                        } as GuideDecision;
+                    }
+                    return null;
+                })
+        )
+    );
+
+    for (const res of results) {
+        if (res.status === "fulfilled" && res.value) {
+            decisions.push(res.value);
         }
     }
 
@@ -299,6 +303,6 @@ async function getGuideDecision(
 /** 重置所有 session（新模拟时调用） */
 export function resetGuideSessions(): void {
     guideSessions.clear();
-    isInitialized = false;
-    console.log("[Backboard] 重置所有引导员 session");
+    globalAssistantId = null;
+    console.log("[Backboard] 重置所有引导员 session 和全局 Assistant");
 }

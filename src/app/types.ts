@@ -46,10 +46,13 @@ export type Agent = {
 
   // 跟随引导员
   followingGuideId?: string;  // 正在跟随的引导员 ID（如果有）
+  willFollowGuide?: boolean;  // 是否选择跟随（只掷骰一次）
+  targetSafePointId?: string; // 当前路径对应的目标安全点
 
   // 反应延迟
   reactionDelay: number;      // 多少 tick 后才开始行动
   ticksSinceStart: number;    // 从模拟开始经过的 tick 数
+  spawnTick?: number;         // 生成时的全局 tick（用于 reactionDelay）
 };
 
 /** 引导员 AI 的一次决策 */

@@ -1,7 +1,7 @@
 // src/sim/evaluation.ts
 // 评估模块 — 纯逻辑，导出函数给 UI 层使用
 
-import type { Agent, FireCell, Scenario } from "../app/types";
+import type { Agent, FireCell } from "../app/types";
 
 /* ──────────── 类型定义 ──────────── */
 

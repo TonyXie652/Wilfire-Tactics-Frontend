@@ -1,7 +1,7 @@
 // src/sim/pathfinding.ts
 // A* 路径寻找算法 — 基于路网图结构 + 火势动态代价
 
-import type { Node, Edge, Scenario, SafePoint, FireCell } from "../app/types";
+import type { Node, Scenario, SafePoint, FireCell } from "../app/types";
 
 /* ──────────── 图结构 ──────────── */
 
@@ -112,9 +112,9 @@ export function findNearestSafePoint(
 
 /* ──────────── 火势代价 ──────────── */
 
-const FIRE_DANGER_RADIUS = 0.0015;   // 经纬度单位，火焰影响范围
-const FIRE_PENALTY_MULTIPLIER = 50;  // 火焰附近的代价倍数
-const FIRE_BLOCK_INTENSITY = 3;      // intensity >= 3 直接封路
+const FIRE_DANGER_RADIUS = 0.002;    // 警戒范围（约 200m）
+const FIRE_PENALTY_MULTIPLIER = 5000;  // 高代价但不至于让图全断
+const FIRE_BLOCK_INTENSITY = 3;        // 只有强火（intensity≥3）才完全封路
 
 /** 计算某节点受火势影响的附加代价 */
 function firePenalty(
