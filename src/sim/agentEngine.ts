@@ -13,8 +13,8 @@ import {
 
 /* ──────────── 常量 ──────────── */
 
-/** 引导员影响范围（米） */
-const GUIDE_INFLUENCE_RADIUS = 150;
+/** 居民视野/引导员影响范围（米） */
+const GUIDE_INFLUENCE_RADIUS = 50;
 
 /** 居民跟随引导员的概率 (0~1) */
 const FOLLOW_GUIDE_CHANCE = 0.6;
