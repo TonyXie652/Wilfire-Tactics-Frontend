@@ -59,7 +59,7 @@ export function MapView({
       antialias: true,
     });
 
-    map.addControl(new mapboxgl.NavigationControl(), "top-right");
+
 
     const overlay = new MapboxOverlay({
       interleaved: false,
@@ -77,7 +77,7 @@ export function MapView({
     map.on("load", () => {
       map.easeTo({
         pitch: 40,
-        bearing: -35,
+        bearing: 0,
         duration: 2000,
       });
 

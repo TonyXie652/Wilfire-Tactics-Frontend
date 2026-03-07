@@ -18,14 +18,14 @@ export const Toolbar: React.FC<ToolbarProps> = ({ activeTool, onSelectTool }) =>
   ];
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "24px", marginTop: "16px", flex: 1 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: "24px", marginTop: "16px", flex: 1, alignItems: "center" }}>
       <style>{`
         .tool-btn {
           display: flex;
           flex-direction: row;
           align-items: center;
-          padding: 0 16px;
-          height: 56px;
+          padding: 0 12px;
+          height: 44px;
           color: #fff;
           border: none;
           background: rgba(40, 40, 40, 0.4);
@@ -35,7 +35,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ activeTool, onSelectTool }) =>
           cursor: pointer;
           transition: all 0.25s cubic-bezier(0.25, 0.8, 0.25, 1);
           border-left: 3px solid transparent;
-          width: 100%;
+          width: 85%;
           box-sizing: border-box;
           position: relative;
           overflow: hidden;

@@ -77,21 +77,25 @@ export default function HomePage() {
               Real-time Emergency Response Demo
             </div>
 
-            {/* 主标题：修改 #2 添加了橙色渐变和光晕 */}
+            {/* 主标题：火焰渐变 + 呼吸辉光动画 */}
+            <style>{`
+              @keyframes fireGlow {
+                0%, 100% { filter: drop-shadow(0 8px 24px rgba(239, 68, 68, 0.25)) drop-shadow(0 0 40px rgba(249, 115, 22, 0.08)); }
+                50% { filter: drop-shadow(0 12px 36px rgba(239, 68, 68, 0.4)) drop-shadow(0 0 60px rgba(249, 115, 22, 0.18)); }
+              }
+            `}</style>
             <h1
               style={{
-                fontSize: "74px",
+                fontSize: "78px",
                 lineHeight: 1.02,
                 fontWeight: 800,
                 margin: 0,
                 letterSpacing: "-0.03em",
                 marginBottom: "20px",
-                // 渐变文字
-                background: "linear-gradient(135deg, #ffffff 30%, #f97316 100%)",
+                background: "linear-gradient(135deg, #fff8f0 0%, #ffbd59 35%, #f97316 65%, #dc2626 100%)",
                 WebkitBackgroundClip: "text",
                 WebkitTextFillColor: "transparent",
-                // 使用 drop-shadow 替代 text-shadow，让渐变字的阴影更自然
-                filter: "drop-shadow(0 12px 30px rgba(239, 68, 68, 0.25))",
+                animation: "fireGlow 3s ease-in-out infinite",
               }}
             >
               Wildfire
@@ -113,27 +117,28 @@ export default function HomePage() {
               coordination through a clear visual workflow.
             </p>
 
-            <div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
+            <div style={{ display: "flex", gap: "18px", flexWrap: "wrap", alignItems: "center" }}>
               <button
                 onClick={() => navigate("/simulation")}
                 onMouseEnter={() => setIsHoverPrimary(true)}
                 onMouseLeave={() => setIsHoverPrimary(false)}
                 style={{
-                  padding: "15px 26px",
-                  fontSize: "18px",
+                  padding: "18px 36px",
+                  fontSize: "20px",
                   fontWeight: 700,
-                  borderRadius: "14px",
-                  border: "1px solid rgba(255,255,255,0.08)",
+                  borderRadius: "16px",
+                  border: "1px solid rgba(255,255,255,0.1)",
                   background: isHoverPrimary 
                     ? "linear-gradient(135deg, #f87171 0%, #fb923c 100%)" 
                     : "linear-gradient(135deg, #ef4444 0%, #f97316 100%)",
                   color: "white",
                   cursor: "pointer",
                   boxShadow: isHoverPrimary
-                    ? "0 18px 42px rgba(239, 68, 68, 0.4), 0 8px 24px rgba(249,115,22,0.25)"
-                    : "0 14px 34px rgba(239, 68, 68, 0.28), 0 6px 18px rgba(249,115,22,0.18)",
-                  transform: isHoverPrimary ? "translateY(-2px)" : "translateY(0)",
-                  transition: "all 0.3s ease",
+                    ? "0 20px 50px rgba(239, 68, 68, 0.45), 0 8px 24px rgba(249,115,22,0.3), inset 0 1px 0 rgba(255,255,255,0.2)"
+                    : "0 14px 38px rgba(239, 68, 68, 0.3), 0 6px 18px rgba(249,115,22,0.2), inset 0 1px 0 rgba(255,255,255,0.12)",
+                  transform: isHoverPrimary ? "translateY(-3px) scale(1.02)" : "translateY(0) scale(1)",
+                  transition: "all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1)",
+                  letterSpacing: "0.02em",
                 }}
               >
                 Enter Simulation
@@ -143,20 +148,21 @@ export default function HomePage() {
                 onMouseEnter={() => setIsHoverSecondary(true)}
                 onMouseLeave={() => setIsHoverSecondary(false)}
                 style={{
-                  padding: "15px 24px",
-                  fontSize: "18px",
+                  padding: "16px 24px",
+                  fontSize: "16px",
                   fontWeight: 500,
                   borderRadius: "14px",
-                  border: "1px solid rgba(255,255,255,0.16)",
+                  border: "1px solid rgba(255,255,255,0.14)",
                   background: isHoverSecondary 
-                    ? "rgba(255,255,255,0.12)" 
-                    : "rgba(255,255,255,0.04)",
-                  color: "white",
+                    ? "rgba(255,255,255,0.1)" 
+                    : "transparent",
+                  color: isHoverSecondary ? "#fff" : "rgba(255,255,255,0.7)",
                   cursor: "pointer",
                   backdropFilter: "blur(10px)",
                   transform: isHoverSecondary ? "translateY(-2px)" : "translateY(0)",
-                  borderColor: isHoverSecondary ? "rgba(255,255,255,0.3)" : "rgba(255,255,255,0.16)",
+                  borderColor: isHoverSecondary ? "rgba(255,255,255,0.3)" : "rgba(255,255,255,0.14)",
                   transition: "all 0.3s ease",
+                  letterSpacing: "0.01em",
                 }}
               >
                 View Overview
@@ -239,6 +245,46 @@ export default function HomePage() {
               );
             })}
           </div>
+        </div>
+      </div>
+
+      {/* Footer */}
+      <div
+        style={{
+          position: "absolute",
+          bottom: 0,
+          left: 0,
+          width: "100%",
+          zIndex: 2,
+          padding: "20px 48px",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          boxSizing: "border-box",
+          background: "linear-gradient(0deg, rgba(0,0,0,0.5) 0%, transparent 100%)",
+        }}
+      >
+        <span style={{ color: "rgba(255,255,255,0.4)", fontSize: "13px" }}>
+          © 2026 Wildfire Tactics · HACK CAN — University of Waterloo
+        </span>
+        <div style={{ display: "flex", gap: "10px" }}>
+          {["React", "Deck.gl", "Mapbox", "TypeScript"].map((tech) => (
+            <span
+              key={tech}
+              style={{
+                padding: "4px 10px",
+                borderRadius: "6px",
+                background: "rgba(255,255,255,0.06)",
+                border: "1px solid rgba(255,255,255,0.08)",
+                color: "rgba(255,255,255,0.45)",
+                fontSize: "11px",
+                fontWeight: 500,
+                letterSpacing: "0.03em",
+              }}
+            >
+              {tech}
+            </span>
+          ))}
         </div>
       </div>
     </div>

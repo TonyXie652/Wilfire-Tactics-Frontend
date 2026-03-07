@@ -664,6 +664,16 @@ export default function App() {
       if (e.key === "Escape") {
         setSelectedGuideId(null);
         setMode("idle");
+        setIsPaused((p) => !p);
+      }
+      if (e.key === "Tab") {
+        e.preventDefault();
+        setIsSidebarOpen((prev) => !prev);
+      }
+      // 数字键 1-5 切换工具
+      const toolKeys: Record<string, ToolType> = { "1": "none", "2": "guide", "3": "resident", "4": "roadblock", "5": "fire" };
+      if (toolKeys[e.key]) {
+        setActiveTool(toolKeys[e.key]);
       }
     };
     window.addEventListener("keydown", handleKeyDown);
@@ -775,8 +785,8 @@ export default function App() {
       {/* ── 右侧：Workspace 侧边栏（浮动在地图上） ── */}
       <div
         style={{
-          width: isSidebarOpen ? "280px" : "0px",
-          minWidth: isSidebarOpen ? "280px" : "0px",
+          width: isSidebarOpen ? "260px" : "0px",
+          minWidth: isSidebarOpen ? "260px" : "0px",
           transition: "width 0.3s ease",
           background: isSidebarOpen ? "#1a1a1a" : "transparent",
           borderLeft: isSidebarOpen ? "1px solid #333" : "0px solid transparent",
@@ -820,7 +830,7 @@ export default function App() {
             display: "flex",
             flexDirection: "column",
             height: "100%",
-            width: "280px",
+            width: "260px",
             boxSizing: "border-box",
           }}>
             <h2 style={{ color: "#fff", margin: "0 0 20px 40px", fontSize: "18px", width: "100%" }}>Workspace</h2>
@@ -831,7 +841,8 @@ export default function App() {
                 align-items: center;
                 justify-content: center;
                 gap: 8px;
-                width: 100%;
+                width: 85%;
+                margin: 0 auto;
                 padding: 12px 16px;
                 font-size: 14px;
                 font-weight: 600;
@@ -853,7 +864,7 @@ export default function App() {
               }
             `}</style>
 
-            <div style={{ marginBottom: "32px", display: "flex", flexDirection: "column", gap: 16 }}>
+            <div style={{ marginBottom: "32px", display: "flex", flexDirection: "column", gap: 16, alignItems: "center" }}>
               <button
                 onClick={() => setIsPaused((p) => !p)}
                 className="action-btn"
@@ -883,11 +894,11 @@ export default function App() {
             <Toolbar activeTool={activeTool} onSelectTool={setActiveTool} />
             
             {/* 放置在底部填补空白的返回按钮 */}
-            <div style={{ marginTop: "auto", paddingTop: "20px" }}>
+            <div style={{ marginTop: "auto", paddingTop: "20px", display: "flex", justifyContent: "center" }}>
               <button
                 onClick={() => navigate("/")}
                 style={{
-                  width: "100%",
+                  width: "85%",
                   padding: "12px 16px",
                   fontSize: "14px",
                   background: "rgba(25, 25, 25, 0.8)",
