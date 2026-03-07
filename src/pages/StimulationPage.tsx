@@ -439,7 +439,7 @@ export default function SimulationPage() {
   const navigate = useNavigate();
   const [timeMs, setTimeMs] = useState(() => performance.now());
   const [fireCells, setFireCells] = useState<FireCell[]>(initialFire);
-  const [isPaused, setIsPaused] = useState(false);
+  const [isPaused, setIsPaused] = useState(true);
 
   // ── 风力参数（后续接入 UI 滑块控制） ──
   const [wind] = useState<WindConfig>({
