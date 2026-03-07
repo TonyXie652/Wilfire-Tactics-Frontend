@@ -1,4 +1,4 @@
-import type { FireCell } from "../app/types";
+import type { FireCell, WindConfig } from "../app/types";
 
 const MAX_INTENSITY = 4;
 const SPREAD_THRESHOLD = 2;
@@ -32,7 +32,10 @@ function getDist(p1: [number, number], p2: [number, number]): number {
   return Math.sqrt(dx * dx + dy * dy);
 }
 
-export function stepFireSpread(fireCells: FireCell[]): FireCell[] {
+export function stepFireSpread(
+  fireCells: FireCell[],
+  wind?: WindConfig
+): FireCell[] {
   // 1. 内部升级逻辑 (慢节奏演化)
   const activeCells = fireCells.map(cell => {
     const nextCell = { ...cell, age: (cell.age ?? 0) + 1 };
@@ -59,6 +62,27 @@ export function stepFireSpread(fireCells: FireCell[]): FireCell[] {
 
     // 随机选 1 个方向
     const dir = DIRECTIONS[Math.floor(Math.random() * DIRECTIONS.length)];
+
+    // 【风力影响核心逻辑恢复】计算这股火苗是不是顺风
+    let finalSpreadChance = dynamicSpreadChance;
+    if (wind && wind.speed > 0) {
+      // 0度向北(dy=1), 90向东(dx=1) => Math.atan2(dx, dy)
+      // dir[0] 是经度差(东), dir[1] 是纬度差(北)
+      const fireAngleRad = Math.atan2(dir[0], dir[1]);
+      const fireAngleDeg = (fireAngleRad * 180) / Math.PI;
+
+      const angleDiff = Math.abs(wind.angleDeg - fireAngleDeg);
+      const angleDiffRad = (angleDiff * Math.PI) / 180;
+
+      // cosine 对齐度：顺风=+1，侧风=0，逆风=-1
+      const alignment = Math.cos(angleDiffRad);
+
+      // 顺风时最多放大3倍（根据风速），逆风时最少只剩15%
+      const multiplier = 1 + alignment * wind.speed * 2;
+      finalSpreadChance = Math.max(finalSpreadChance * 0.15, finalSpreadChance * multiplier);
+    }
+
+    if (Math.random() > finalSpreadChance) continue;
 
     const neighborPos: [number, number] = [
       cell.position[0] + dir[0] * LNG_STEP * 0.85, // 缩短步长，增加紧凑感

@@ -33,7 +33,7 @@ export type Agent = {
   status?: "moving" | "safe" | "dead";
 };
 
-export type FireCell = { 
+export type FireCell = {
   id: string;
   position: [number, number];
   intensity: number;
@@ -41,3 +41,16 @@ export type FireCell = {
   age?: number;
   activatedAt?: number;
 }; // intensity 0..1
+
+/**
+ * 风力配置，供用户在 UI 中实时调整。
+ *
+ * angleDeg - 风向角度 (0=北, 90=东, 180=南, 270=西)
+ * speed - 风速 (0~1 的归一化系数，用来放大迎风面的蔓延概率)
+ * baseSpreadChance - 基础蔓延概率，方便 UI 调节整体难度
+ */
+export type WindConfig = {
+  angleDeg: number;
+  speed: number;
+  baseSpreadChance: number;
+};
