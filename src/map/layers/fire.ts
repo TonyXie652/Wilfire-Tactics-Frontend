@@ -19,8 +19,8 @@ function getFireCoreColor(intensity: number): [number, number, number, number] {
   if (intensity <= 0) return [0, 0, 0, 0];
   if (intensity === 1) return [255, 180, 50, 200]; 
   if (intensity === 2) return [255, 100, 0, 220];  
-  if (intensity === 3) return [255, 60, 0, 255];   
-  return [255, 0, 0, 255]; // 核心区明亮红色
+  if (intensity === 3) return [255, 60, 0, 220]; // 增加少量透明度 (从 255 降至 220)
+  return [255, 0, 0, 230]; // 核心区明亮红色，但也保留一丝透明度 (从 255 降至 230)
 }
 
 // 2. 伪随机位置：增加高度偏移 (Z 轴)，解决闪烁
@@ -30,7 +30,7 @@ function getJitteredPosition(position: [number, number], id: string, amount: num
   const offsetLat = (Math.cos(seed) * amount);
   const [lng, lat] = position;
   // 【关键】：调整 Z 轴偏移方向。负数在 Deck.gl 中代表向上（远离地表，拉近镜头）
-  const offsetZ = (4 + (seed % 10) * 20);
+  const offsetZ = (2 + (seed % 10) * 10);
   return [lng + 0.00055 + offsetLng, lat + 0.00022 + offsetLat, offsetZ];
 }
 
@@ -51,6 +51,19 @@ export function makeFireLayer(fireCells: FireCell[], opts: Options = {}): Layer[
       return [d.position[0] + 0.00055, d.position[1] + 0.00022, offsetZ];
     },
     getFillColor: (d) => getFireCoreColor(d.intensity),
+
+    stroked: true,
+    getLineColor: (d) => {
+      // 获取当前强度的颜色，保持色相但提高亮度和不透明度作为发光边缘
+      const core = getFireCoreColor(d.intensity);
+      // 如果火苗强度极低，就不增加刺眼的边缘了
+      if (d.intensity <= 1) return [core[0], core[1], core[2], 0]; 
+      // 对于中大火，边缘加上明黄/亮橙色的光环效果，并大幅增加透明度让边缘更柔和、不那么实心
+      return [255, 220, 100, 225]; 
+    },
+    getLineWidth: 2,
+    lineWidthUnits: 'pixels',
+
     // 【解决面积过大】：缩小半径系数，之前是 0.4 + intensity * 0.2，现在改小一倍
     getRadius: (d) => cellSize * (0.2 + d.intensity * 0.1) * pulseRatio,
     radiusUnits: 'meters',
@@ -69,8 +82,28 @@ export function makeFireLayer(fireCells: FireCell[], opts: Options = {}): Layer[
   // 2. 3D 模型层
   const fireModelLayer = new ScenegraphLayer<FireCell>({
     id: "fire-3d-models",
-    // 【解决卡顿和太密集】：只给最核心的火（强度 4）渲染 3D 模型，或者增加一个取余数过滤
-    data: activeFireCells.filter(d => d.intensity >= 4),
+    // 【空间打散排列】：不再完全按随机数看天吃饭（会导致时密时疏）。
+    // 我们强制要求每两个 3D 模型之间的地理坐标距离必须大于一个规定的最小间距。
+    data: (() => {
+      const candidates = activeFireCells.filter(d => d.intensity >= 4);
+      const selected: FireCell[] = [];
+      // 这个距离阈值控制着 3D 模型的最终观感密度（建议在 0.0006 - 0.001 之间）
+      const MIN_MODEL_SPACING = 0.0007; 
+      
+      for (const cell of candidates) {
+        // 检查这个准模型和已经选中的模型是不是太近了
+        const isTooClose = selected.some(s => {
+          const dx = s.position[0] - cell.position[0];
+          const dy = s.position[1] - cell.position[1];
+          return Math.sqrt(dx*dx + dy*dy) < MIN_MODEL_SPACING;
+        });
+
+        if (!isTooClose) {
+          selected.push(cell);
+        }
+      }
+      return selected;
+    })(),
     visible,
     scenegraph: FIRE_MODEL_URL,
     loaders: [GLTFLoader],
@@ -78,17 +111,22 @@ export function makeFireLayer(fireCells: FireCell[], opts: Options = {}): Layer[
     // 增加高度偏移 Z
     getPosition: (d) => getJitteredPosition(d.position, d.id, 0.0003),
 
-    // 缩放倍数
-    getScale: () => {
-      const baseScale = 30; // 统一缩放大小
-      const s = baseScale * pulseRatio;
-      return [s, s, s];
-    },
-
-    // 不再使用 getColor 强行上色，让模型保持自己本身的贴图/材质颜色
-    // getColor: (d) => getFireCoreColor(d.intensity),
-
     _animations: { '*': { playing: true } },
+
+    // 由于 Deck.gl 内置 _animations 暂不接受 DataAccessor，
+    // 要打破一致性，我们可以微调一下每团火的 Y 轴（高度）缩放，
+    // 不影响 X、Z 轴定位，但这会使模型在视觉上错开。
+    getScale: (d) => {
+      const baseScale = 30;
+      const seed = d.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % 100;
+      // 在 Y 轴向上引入 0.8 ~ 1.2 的体积方差，打破完全复制的单调感
+      const randomYOffset = 0.8 + (seed / 100) * 0.4; 
+      
+      const sX = baseScale * pulseRatio;
+      const sY = baseScale * pulseRatio * randomYOffset;
+      const sZ = baseScale * pulseRatio;
+      return [sX, sY, sZ];
+    },
     _lighting: 'flat', // 使用 flat 恢复模型的原本的高亮发光感，pbr 会让没有环境光的模型变黑
 
     pickable,

@@ -267,7 +267,8 @@ export default function SimulationPage() {
   // 【核心修改点】：在这里计算脉冲，并传给火灾图层
   const layers = useMemo(() => {
 
-    const pulseRatio = 1.0 + Math.sin(timeMs / 150) * 0.02;
+    // 将时间除数从 150 增大到 600，大幅减慢呼吸的频率
+    const pulseRatio = 1.0 + Math.sin(timeMs / 300) * 0.02;
 
 
     return [
