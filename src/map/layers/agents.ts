@@ -4,7 +4,7 @@ import type { Layer } from "@deck.gl/core";
 import type { Agent } from "../../app/types";
 
 /** 引导员影响范围（米） — 和 agentEngine.ts 的 GUIDE_INFLUENCE_RADIUS 保持一致 */
-const GUIDE_INFLUENCE_RADIUS_METERS = 50;
+const GUIDE_INFLUENCE_RADIUS_METERS = 30;
 
 type Options = {
   selectedAgentId?: string | null;
