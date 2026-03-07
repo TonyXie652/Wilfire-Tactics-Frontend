@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { ScatterplotLayer } from "@deck.gl/layers";
 import { MapView } from "../map/MapView";
 import { makeRoadLayers } from "../map/layers/roads";
 import { makeAgentsLayer } from "../map/layers/agents";
@@ -68,6 +69,9 @@ const scenario: Scenario = {
     { id: "n56", lng: -114.37928999069784, lat: 62.450541736187574 },
     { id: "n57", lng: -114.3830203625372, lat: 62.45215422409777 },
     { id: "n58", lng: -114.38101342830652, lat: 62.449105488947765 },
+    { id: "n59", lng: -114.37523983297032, lat: 62.45121259263058 },
+    { id: "n60", lng: -114.37574153554945, lat: 62.450927634109405 },
+    { id: "n61", lng: -114.37605233654227, lat: 62.4503773264438 },
   ],
 
   edges: [
@@ -133,6 +137,8 @@ const scenario: Scenario = {
     { id: "e60", from: "n4", to: "n56" },
     { id: "e61", from: "n56", to: "n57" },
     { id: "e62", from: "n56", to: "n58" },
+    { id: "e63", from: "n59", to: "n60" },
+    { id: "e64", from: "n60", to: "n61" },
   ],
 
   safePoints: [
@@ -165,6 +171,7 @@ export default function SimulationPage() {
   const [timeMs, setTimeMs] = useState(() => performance.now());
   const [fireCells, setFireCells] = useState<FireCell[]>(initialFire);
   const [isPaused, setIsPaused] = useState(false);
+  const [testNodeId, setTestNodeId] = useState("");
 
   // 高频动画循环 (用来驱动呼吸效果)
   useEffect(() => {
@@ -195,20 +202,36 @@ export default function SimulationPage() {
     return () => window.clearInterval(timer);
   }, [isPaused]);
 
+  const testNode = useMemo(() => scenario.nodes.find((n) => n.id === testNodeId), [testNodeId]);
+
   // 【核心修改点】：在这里计算脉冲，并传给火灾图层
   const layers = useMemo(() => {
-    
+
     const pulseRatio = 1.0 + Math.sin(timeMs / 150) * 0.02;
-    
+
 
     return [
       ...makeRoadLayers(scenario),
       // 将算好的 pulseRatio 作为参数传进去！
-      ...makeFireLayer(fireCells, { pulseRatio }), 
+      ...makeFireLayer(fireCells, { pulseRatio }),
       makeAgentsLayer(agents),
       ...makeSafePointsLayer(scenario.safePoints, { timeMs }),
+      ...(testNode
+        ? [
+          new ScatterplotLayer({
+            id: "test-node-highlight",
+            data: [testNode],
+            getPosition: (d) => [d.lng, d.lat, 10],
+            getFillColor: [0, 255, 255, 255], // 醒目的青色
+            getRadius: 20,
+            radiusUnits: "meters",
+            radiusMinPixels: 15,
+            parameters: { depthTest: false } as any,
+          }),
+        ]
+        : []),
     ];
-  }, [timeMs, fireCells]);
+  }, [timeMs, fireCells, testNode]);
 
   return (
     <div style={{ height: "100vh", width: "100vw", position: "relative" }}>
@@ -232,24 +255,47 @@ export default function SimulationPage() {
         Back Home
       </button>
 
-      <button
-        onClick={() => setIsPaused((p) => !p)}
+      <div
         style={{
           position: "absolute",
           top: 20,
           right: 20,
           zIndex: 10,
-          padding: "10px 16px",
-          fontSize: "14px",
-          background: isPaused ? "#2e7d32" : "#b71c1c",
-          color: "white",
-          border: "1px solid #444",
-          borderRadius: "6px",
-          cursor: "pointer",
+          display: "flex",
+          gap: "10px",
+          alignItems: "center"
         }}
       >
-        {isPaused ? "Resume Fire" : "Pause Fire"}
-      </button>
+        <input
+          type="text"
+          placeholder="搜索 Node ID (如 n25)"
+          value={testNodeId}
+          onChange={(e) => setTestNodeId(e.target.value.trim())}
+          style={{
+            padding: "8px 12px",
+            fontSize: "14px",
+            borderRadius: "6px",
+            border: "1px solid #444",
+            background: "rgba(0,0,0,0.7)",
+            color: "white",
+            outline: "none"
+          }}
+        />
+        <button
+          onClick={() => setIsPaused((p) => !p)}
+          style={{
+            padding: "10px 16px",
+            fontSize: "14px",
+            background: isPaused ? "#2e7d32" : "#b71c1c",
+            color: "white",
+            border: "1px solid #444",
+            borderRadius: "6px",
+            cursor: "pointer",
+          }}
+        >
+          {isPaused ? "Resume Fire" : "Pause Fire"}
+        </button>
+      </div>
 
       <MapView layers={layers} />
     </div>
