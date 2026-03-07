@@ -1,12 +1,972 @@
-import { Routes, Route } from "react-router-dom";
-import HomePage from "./pages/HomePage";
-import SimulationPage from "./pages/StimulationPage";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { MapView } from "./map/MapView";
+import { makeRoadLayers } from "./map/layers/roads";
+import { makeAgentsLayer } from "./map/layers/agents";
+import { makeFireLayer } from "./map/layers/fire";
+import { makeSafePointsLayer } from "./map/layers/safePoints";
+import { stepFireSpread } from "./stimulation/fireSpread";
+import { stepAgents, createResident, createGuide, resetEngineCache } from "./sim/agentEngine";
+import { getGuideDecisions, resetGuideSessions } from "./sim/guideAgent";
+import { EvacuationDialog } from "./ui/EvacuationDialog";
+import { Toolbar } from "./ui/Toolbar";
+import type { ToolType } from "./ui/Toolbar";
+import { StatsPanel } from "./ui/StatsPanel";
+import { Play, Pause, RotateCcw } from "lucide-react";
+import type { Scenario, Agent, FireCell, GuideDecision } from "./app/types";
+
+// ─── 场景数据（来自队友手动标点） ───
+
+const scenario: Scenario = {
+  nodes: [
+    { id: "n1", lng: -114.37090451490914, lat: 62.449266602489246 },
+    { id: "n2", lng: -114.36969942815712, lat: 62.44982300573008 },
+    { id: "n3", lng: -114.36856799629983, lat: 62.45038057895849 },
+    { id: "n4", lng: -114.36736207098416, lat: 62.45092885694601 },
+    { id: "n5", lng: -114.36619236828834, lat: 62.451501068335745 },
+    { id: "n6", lng: -114.36495878954875, lat: 62.45205858805181 },
+    { id: "n7", lng: -114.36782604236012, lat: 62.45331530960354 },
+    { id: "n8", lng: -114.36898171492818, lat: 62.45276380384493 },
+    { id: "n9", lng: -114.37017912445104, lat: 62.45219554383698 },
+    { id: "n10", lng: -114.37132150059716, lat: 62.451646950734926 },
+    { id: "n11", lng: -114.37418860932327, lat: 62.45294017647615 },
+    { id: "n12", lng: -114.37300734470537, lat: 62.4534983482408 },
+    { id: "n13", lng: -114.3718402491987, lat: 62.45404329833795 },
+    { id: "n14", lng: -114.3706819336215, lat: 62.454609608894 },
+    { id: "n15", lng: -114.36950227412291, lat: 62.455165767127085 },
+    { id: "n16", lng: -114.36664698404589, lat: 62.45388381134859 },
+    { id: "n17", lng: -114.36382244079833, lat: 62.452622265039395 },
+    { id: "n18", lng: -114.36325910529025, lat: 62.45294529481973 },
+    { id: "n19", lng: -114.36287042827644, lat: 62.45332919804835 },
+    { id: "n20", lng: -114.36546728406196, lat: 62.45444208906673 },
+    { id: "n21", lng: -114.36831552241401, lat: 62.45572498222401 },
+    { id: "n22", lng: -114.3753963551126, lat: 62.45237861081117 },
+    { id: "n23", lng: -114.37656475657917, lat: 62.4518096268053 },
+    { id: "n24", lng: -114.37525711964983, lat: 62.45121171173966 },
+    { id: "n25", lng: -114.37287541042681, lat: 62.450158719589126 },
+    { id: "n26", lng: -114.37756147216776, lat: 62.45338309281439 },
+    { id: "n27", lng: -114.37638994774564, lat: 62.45394456099089 },
+    { id: "n28", lng: -114.3751791785427, lat: 62.454493501945535 },
+    { id: "n29", lng: -114.3741258112535, lat: 62.455079259871894 },
+    { id: "n30", lng: -114.37408017756805, lat: 62.44959759766758 },
+    { id: "n31", lng: -114.37208964655076, lat: 62.448712336291294 },
+    { id: "n32", lng: -114.37519019764953, lat: 62.449019080542286 },
+    { id: "n33", lng: -114.3732735179293, lat: 62.44815196885901 },
+    { id: "n34", lng: -114.36995270345354, lat: 62.447750739632795 },
+    { id: "n35", lng: -114.37458039068142, lat: 62.44872023445464 },
+    { id: "n36", lng: -114.37764777252217, lat: 62.44724978556806 },
+    { id: "n37", lng: -114.36897988248352, lat: 62.448404627205406 },
+    { id: "n38", lng: -114.36809606123617, lat: 62.44803147654662 },
+    { id: "n39", lng: -114.36743379950089, lat: 62.44772630938738 },
+    { id: "n40", lng: -114.3675609262238, lat: 62.44830414957636 },
+    { id: "n41", lng: -114.36809165917465, lat: 62.4485418205023 },
+    { id: "n42", lng: -114.36750275643398, lat: 62.448814475715096 },
+    { id: "n43", lng: -114.3669134007907, lat: 62.44909667069501 },
+    { id: "n44", lng: -114.36661944129845, lat: 62.44896827228001 },
+    { id: "n45", lng: -114.36602699286955, lat: 62.449248188918006 },
+    { id: "n46", lng: -114.36405800141647, lat: 62.451604869481315 },
+    { id: "n47", lng: -114.3627836507516, lat: 62.45128882996289 },
+    { id: "n48", lng: -114.36401654069468, lat: 62.44833480992412 },
+    { id: "n49", lng: -114.36342271748346, lat: 62.4480629315928 },
+    { id: "n50", lng: -114.36127218346934, lat: 62.449658060731224 },
+    { id: "n51", lng: -114.36219371579486, lat: 62.45008859933773 },
+    { id: "n52", lng: -114.36241738361106, lat: 62.45104075306506 },
+    { id: "n53", lng: -114.37109399862254, lat: 62.446690208125204 },
+    { id: "n54", lng: -114.37147780917999, lat: 62.4456691867164 },
+    { id: "n55", lng: -114.37332457960898, lat: 62.4458536541656 },
+    { id: "n56", lng: -114.37394894590632, lat: 62.446753105039534 },
+    { id: "n57", lng: -114.37218436471196, lat: 62.44763615013383 },
+    { id: "n58", lng: -114.37432274272378, lat: 62.4462876058559 },
+    { id: "n59", lng: -114.37572426506634, lat: 62.45095010300108 },
+    { id: "n60", lng: -114.3760356164823, lat: 62.45038369887047 },
+    { id: "n61", lng: -114.37685584038306, lat: 62.44992888814403 },
+    { id: "n62", lng: -114.3778831589509, lat: 62.449101748426216 },
+    { id: "n63", lng: -114.38004363106738, lat: 62.448001960717676 },
+    { id: "n64", lng: -114.38147636999133, lat: 62.448456738444776 },
+    { id: "n65", lng: -114.37934852948146, lat: 62.45048631612522 },
+    { id: "n66", lng: -114.38107646778293, lat: 62.449081783870525 },
+    { id: "n67", lng: -114.38196877468101, lat: 62.44877889863554 },
+    { id: "n68", lng: -114.3847482780753, lat: 62.44761617003587 },
+    { id: "n69", lng: -114.38665504804707, lat: 62.44916746691075 },
+    { id: "n70", lng: -114.38738890375019, lat: 62.44963286140799 },
+    { id: "n71", lng: -114.38713072465474, lat: 62.45103671687551 },
+    { id: "n72", lng: -114.38589295743765, lat: 62.451308709981674 },
+    { id: "n73", lng: -114.3830447275753, lat: 62.452170259329336 },
+    { id: "n74", lng: -114.37871670826924, lat: 62.445930721770765 },
+    { id: "n75", lng: -114.38021394291377, lat: 62.44613062667091 },
+    { id: "n76", lng: -114.38434757055208, lat: 62.445800408571074 },
+    { id: "n77", lng: -114.38552694147047, lat: 62.44746965073833 },
+    { id: "n78", lng: -114.38851713607554, lat: 62.44726859608866 },
+    { id: "n79", lng: -114.38996788415827, lat: 62.4464194633037 },
+    { id: "n80", lng: -114.38717706783696, lat: 62.445420788678916 },
+    { id: "n81", lng: -114.38566867480894, lat: 62.44554019589191 },
+    { id: "n82", lng: -114.38514101563467, lat: 62.44486492392687 },
+    { id: "n83", lng: -114.38441478230591, lat: 62.44230206636263 },
+    { id: "n84", lng: -114.37682103998388, lat: 62.44564466472764 },
+    { id: "n85", lng: -114.3755524296185, lat: 62.44515736469762 },
+    { id: "n86", lng: -114.37469149133325, lat: 62.44477744071196 },
+    { id: "n87", lng: -114.37332121957814, lat: 62.4442289158678 },
+    { id: "n88", lng: -114.37501937400205, lat: 62.44544574924831 },
+    { id: "n88l", lng: -114.37346991089463, lat: 62.444795928160204 },
+    { id: "n89", lng: -114.37309906452465, lat: 62.44452360231293 },
+    { id: "n90", lng: -114.37264343039521, lat: 62.44409480346846 },
+    { id: "n91", lng: -114.3719995920838, lat: 62.44412841394748 },
+    { id: "n92", lng: -114.37103010541077, lat: 62.44438953036439 },
+    { id: "n93", lng: -114.37167963921036, lat: 62.44501582011091 },
+    { id: "n94", lng: -114.36538246471845, lat: 62.450050873079135 },
+    { id: "n95", lng: -114.36215371911094, lat: 62.454096834023375 },
+    { id: "n96", lng: -114.36428754960966, lat: 62.455000169865514 },
+    { id: "n97", lng: -114.37414735534004, lat: 62.45557257660897 },
+    { id: "n98", lng: -114.37346917086381, lat: 62.455913903261234 },
+    { id: "n99", lng: -114.3723043793023, lat: 62.4564581913601 },
+    { id: "n100", lng: -114.37171082387782, lat: 62.45671993216564 },
+    { id: "n101", lng: -114.37089570975729, lat: 62.456892210765744 },
+    { id: "n102", lng: -114.36697185547389, lat: 62.45623557902664 },
+    { id: "n103", lng: -114.36700123979186, lat: 62.4562424118605 },
+    { id: "n104", lng: -114.36564324282583, lat: 62.45669851987017 },
+    { id: "n105", lng: -114.36428784285178, lat: 62.457197967953164 },
+    { id: "n106", lng: -114.36173094739532, lat: 62.45606636072438 },
+    { id: "n107", lng: -114.361646817308, lat: 62.454753170684796 },
+    { id: "n108", lng: -114.36175288937089, lat: 62.454459055084584 },
+    { id: "n109", lng: -114.36308130371003, lat: 62.45775684882713 },
+    { id: "n110", lng: -114.37478997175994, lat: 62.457554111654815 },
+    { id: "n111", lng: -114.36975634714142, lat: 62.45747291744996 },
+    { id: "n112", lng: -114.36438436444122, lat: 62.45833232657529 },
+    { id: "n113", lng: -114.36933157741174, lat: 62.457852514749646 },
+    { id: "n114", lng: -114.36868227106895, lat: 62.458062350215926 },
+    { id: "n115", lng: -114.36812470151729, lat: 62.457841843464536 },
+    { id: "n116", lng: -114.36660946986484, lat: 62.458252682246325 },
+    { id: "n117", lng: -114.36545231455939, lat: 62.4586992757109 },
+    { id: "n118", lng: -114.36491731882832, lat: 62.45870755644316 },
+    { id: "n119", lng: -114.38296505814974, lat: 62.45355331566145 },
+    { id: "n120", lng: -114.36938651838301, lat: 62.44319282682832 },
+    { id: "n121", lng: -114.36884208902863, lat: 62.443381086124134 },
+    { id: "n122", lng: -114.36819311238823, lat: 62.444256682086035 },
+    { id: "n123", lng: -114.36735193708448, lat: 62.44462215689103 },
+    { id: "n124", lng: -114.36723036502859, lat: 62.44510393750005 },
+    { id: "n125", lng: -114.36802764012147, lat: 62.44539219877959 },
+    { id: "n126", lng: -114.36051331402007, lat: 62.44933177591483 },
+    { id: "n127", lng: -114.35941095824664, lat: 62.44907170219858 },
+    { id: "n128", lng: -114.36075878333722, lat: 62.44988500096758 },
+    { id: "n129", lng: -114.35897102733244, lat: 62.45027995275299 },
+    { id: "n130", lng: -114.3582088637153, lat: 62.450654631379024 },
+    { id: "n131", lng: -114.35688810399594, lat: 62.45042717436067 },
+    { id: "n132", lng: -114.35885720511865, lat: 62.44945525912979 },
+    { id: "n133", lng: -114.35785093089402, lat: 62.44984336464174 },
+    { id: "n134", lng: -114.36052385901887, lat: 62.44807241925872 },
+    { id: "n135", lng: -114.35748919927325, lat: 62.44742258025394 },
+    { id: "n136", lng: -114.3560822803337, lat: 62.44814388853399 },
+    { id: "n137", lng: -114.35550845022571, lat: 62.44921546966032 },
+    { id: "n138", lng: -114.35524998942465, lat: 62.45025007849631 },
+    { id: "n139", lng: -114.35384321094674, lat: 62.450586642423076 },
+    { id: "n140", lng: -114.35668360810769, lat: 62.45109097477638 },
+    { id: "n141", lng: -114.354926271753, lat: 62.45103917058978 },
+    { id: "n142", lng: -114.35616546504835, lat: 62.45276533665998 },
+    { id: "n143", lng: -114.35650049436661, lat: 62.45361767981137 },
+    { id: "n144", lng: -114.35636953985727, lat: 62.45429306204471 },
+    { id: "n145", lng: -114.3615695675239, lat: 62.455377240237794 },
+    { id: "n146", lng: -114.35559463216312, lat: 62.456206485199715 },
+    { id: "n147", lng: -114.36074457315576, lat: 62.45533267030956 },
+    { id: "n148", lng: -114.35988692113838, lat: 62.45505293407288 },
+    { id: "n149", lng: -114.35972390280895, lat: 62.45442100000747 },
+    { id: "n150", lng: -114.3590310881868, lat: 62.45410534545189 },
+    { id: "n151", lng: -114.35729676273444, lat: 62.45432636534892 },
+    { id: "n152", lng: -114.35837013324415, lat: 62.45408714306518 },
+    { id: "n153", lng: -114.35560435277117, lat: 62.45719740505808 },
+    { id: "n154", lng: -114.36531133862458, lat: 62.45920788785861 },
+    { id: "n155", lng: -114.3636920465407, lat: 62.458031946574806 },
+    { id: "n156", lng: -114.36096862441116, lat: 62.45932788109141 },
+    { id: "n157", lng: -114.36316750992061, lat: 62.45966050129991 },
+    { id: "n158", lng: -114.36027874081292, lat: 62.459060130638534 },
+    { id: "n159", lng: -114.36463880048912, lat: 62.45937420600117 },
+    { id: "n160", lng: -114.36410091762438, lat: 62.4597854676353 },
+    { id: "n161", lng: -114.35618430690427, lat: 62.4605894206764 },
+    { id: "n162", lng: -114.35576677670828, lat: 62.46031933389952 },
+    { id: "n163", lng: -114.3556943009371, lat: 62.45918285620587 },
+    { id: "n164", lng: -114.3557747047515, lat: 62.45992476221329 },
+    { id: "n165", lng: -114.34700796371145, lat: 62.45517410478661 },
+    { id: "n166", lng: -114.35358368613791, lat: 62.459208009837255 },
+    { id: "n167", lng: -114.35413829400147, lat: 62.45995429742845 },
+    { id: "n168", lng: -114.35331255552133, lat: 62.459876414467544 },
+    { id: "n169", lng: -114.35558350369197, lat: 62.460893403818204 },
+    { id: "n170", lng: -114.35930367066395, lat: 62.460104406606206 },
+    { id: "n171", lng: -114.360396083159, lat: 62.46051749039427 },
+    { id: "n172", lng: -114.37587338392164, lat: 62.45844978524897 },
+    { id: "n173", lng: -114.37580938884481, lat: 62.460809895836206 },
+    { id: "n174", lng: -114.36522273561295, lat: 62.45541281074759 },
+  ],
+  edges: [
+    { id: "e1", from: "n1", to: "n2" },
+    { id: "e2", from: "n2", to: "n3" },
+    { id: "e3", from: "n3", to: "n4" },
+    { id: "e4", from: "n4", to: "n5" },
+    { id: "e5", from: "n5", to: "n6" },
+    { id: "e6", from: "n6", to: "n17" },
+    { id: "e7", from: "n17", to: "n18" },
+    { id: "e8", from: "n18", to: "n19" },
+    { id: "e9", from: "n1", to: "n25" },
+    { id: "e10", from: "n25", to: "n24" },
+    { id: "e11", from: "n24", to: "n23" },
+    { id: "e12", from: "n3", to: "n10" },
+    { id: "e13", from: "n4", to: "n9" },
+    { id: "e14", from: "n5", to: "n8" },
+    { id: "e15", from: "n7", to: "n6" },
+    { id: "e16", from: "n10", to: "n9" },
+    { id: "e17", from: "n9", to: "n8" },
+    { id: "e18", from: "n7", to: "n16" },
+    { id: "e19", from: "n7", to: "n8" },
+    { id: "e20", from: "n22", to: "n2" },
+    { id: "e21", from: "n22", to: "n23" },
+    { id: "e22", from: "n11", to: "n12" },
+    { id: "e23", from: "n12", to: "n13" },
+    { id: "e24", from: "n13", to: "n14" },
+    { id: "e25", from: "n14", to: "n15" },
+    { id: "e26", from: "n22", to: "n11" },
+    { id: "e27", from: "n10", to: "n11" },
+    { id: "e28", from: "n12", to: "n9" },
+    { id: "e29", from: "n13", to: "n8" },
+    { id: "e30", from: "n14", to: "n7" },
+    { id: "e31", from: "n15", to: "n16" },
+    { id: "e32", from: "n16", to: "n17" },
+    { id: "e33", from: "n20", to: "n16" },
+    { id: "e34", from: "n20", to: "n19" },
+    { id: "e35", from: "n21", to: "n20" },
+    { id: "e36", from: "n21", to: "n15" },
+    { id: "e37", from: "n20", to: "n96" },
+    { id: "e38", from: "n103", to: "n21" },
+    { id: "e39", from: "n1", to: "n37" },
+    { id: "e40", from: "n37", to: "n38" },
+    { id: "e41", from: "n38", to: "n39" },
+    { id: "e42", from: "n38", to: "n40" },
+    { id: "e43", from: "n40", to: "n41" },
+    { id: "e44", from: "n41", to: "n42" },
+    { id: "e45", from: "n42", to: "n2" },
+    { id: "e46", from: "n42", to: "n43" },
+    { id: "e47", from: "n43", to: "n44" },
+    { id: "e48", from: "n44", to: "n45" },
+    { id: "e49", from: "n45", to: "n3" },
+    { id: "e50", from: "n94", to: "n4" },
+    { id: "e51", from: "n94", to: "n46" },
+    { id: "e52", from: "n46", to: "n6" },
+    { id: "e53", from: "n46", to: "n47" },
+    { id: "e54", from: "n47", to: "n52" },
+    { id: "e55", from: "n52", to: "n51" },
+    { id: "e56", from: "n95", to: "n19" },
+    { id: "e57", from: "n95", to: "n96" },
+    { id: "e58", from: "n95", to: "n108" },
+    { id: "e59", from: "n108", to: "n107" },
+    { id: "e60", from: "n107", to: "n145" },
+    { id: "e61", from: "n145", to: "n106" },
+    { id: "e62", from: "n26", to: "n22" },
+    { id: "e63", from: "n26", to: "n27" },
+    { id: "e64", from: "n12", to: "n28" },
+    { id: "e65", from: "n27", to: "n28" },
+    { id: "e66", from: "n27", to: "n11" },
+    { id: "e67", from: "n13", to: "n29" },
+    { id: "e68", from: "n29", to: "n28" },
+    { id: "e69", from: "n45", to: "n48" },
+    { id: "e70", from: "n34", to: "n37" },
+    { id: "e71", from: "n31", to: "n1" },
+    { id: "e72", from: "n30", to: "n25" },
+    { id: "e73", from: "n34", to: "n37" },
+    { id: "e74", from: "n34", to: "n31" },
+    { id: "e75", from: "n31", to: "n30" },
+    { id: "e76", from: "n31", to: "n33" },
+    { id: "e77", from: "n35", to: "n32" },
+    { id: "e78", from: "n30", to: "n32" },
+    { id: "e79", from: "n35", to: "n33" },
+    { id: "e80", from: "n33", to: "n57" },
+    { id: "e81", from: "n57", to: "n56" },
+    { id: "e82", from: "n53", to: "n34" },
+    { id: "e83", from: "n49", to: "n48" },
+    { id: "e84", from: "n50", to: "n48" },
+    { id: "e85", from: "n51", to: "n50" },
+    { id: "e86", from: "n50", to: "n126" },
+    { id: "e87", from: "n50", to: "n128" },
+    { id: "e88", from: "n24", to: "n59" },
+    { id: "e89", from: "n59", to: "n60" },
+    { id: "e90", from: "n60", to: "n61" },
+    { id: "e91", from: "n61", to: "n62" },
+    { id: "e92", from: "n62", to: "n63" },
+    { id: "e93", from: "n63", to: "n64" },
+    { id: "e93", from: "n64", to: "n67" },
+    { id: "e94", from: "n35", to: "n36" },
+    { id: "e95", from: "n36", to: "n63" },
+    { id: "e96", from: "n23", to: "n65" },
+    { id: "e97", from: "n65", to: "n66" },
+    { id: "e98", from: "n66", to: "n67" },
+    { id: "e99", from: "n36", to: "n74" },
+    { id: "e100", from: "n104", to: "n103" },
+    { id: "e101", from: "n104", to: "n105" },
+    { id: "e102", from: "n105", to: "n106" },
+    { id: "e103", from: "n29", to: "n97" },
+    { id: "e104", from: "n97", to: "n98" },
+    { id: "e105", from: "n98", to: "n99" },
+    { id: "e106", from: "n100", to: "n101" },
+    { id: "e107", from: "n99", to: "n100" },
+    { id: "e108", from: "n56", to: "n58" },
+    { id: "e109", from: "n65", to: "n73" },
+    { id: "e110", from: "n72", to: "n73" },
+    { id: "e111", from: "n71", to: "n72" },
+    { id: "e112", from: "n70", to: "n71" },
+    { id: "e113", from: "n70", to: "n69" },
+    { id: "e114", from: "n69", to: "n68" },
+    { id: "e115", from: "n67", to: "n68" },
+    { id: "e116", from: "n119", to: "n73" },
+    { id: "e117", from: "n68", to: "n77" },
+    { id: "e118", from: "n77", to: "n76" },
+    { id: "e119", from: "n76", to: "n75" },
+    { id: "e120", from: "n75", to: "n74" },
+    { id: "e121", from: "n74", to: "n84" },
+    { id: "e122", from: "n58", to: "n88" },
+    { id: "e123", from: "n88", to: "n88l" },
+    { id: "e124", from: "n84", to: "n85" },
+    { id: "e125", from: "n85", to: "n88" },
+    { id: "e126", from: "n85", to: "n86" },
+    { id: "e127", from: "n86", to: "n87" },
+    { id: "e128", from: "n87", to: "n89" },
+    { id: "e129", from: "n88l", to: "n89" },
+    { id: "e130", from: "n58", to: "n55" },
+    { id: "e131", from: "n55", to: "n54" },
+    { id: "e132", from: "n53", to: "n54" },
+    { id: "e133", from: "n54", to: "n93" },
+    { id: "e134", from: "n90", to: "n87" },
+    { id: "e135", from: "n90", to: "n91" },
+    { id: "e136", from: "n91", to: "n92" },
+    { id: "e137", from: "n92", to: "n93" },
+    { id: "e138", from: "n92", to: "n120" },
+    { id: "e139", from: "n120", to: "n121" },
+    { id: "e140", from: "n77", to: "n78" },
+    { id: "e141", from: "n78", to: "n79" },
+    { id: "e142", from: "n79", to: "n80" },
+    { id: "e143", from: "n80", to: "n81" },
+    { id: "e144", from: "n81", to: "n76" },
+    { id: "e145", from: "n81", to: "n82" },
+    { id: "e146", from: "n82", to: "n83" },
+    { id: "e147", from: "n121", to: "n122" },
+    { id: "e148", from: "n122", to: "n123" },
+    { id: "e149", from: "n123", to: "n124" },
+    { id: "e150", from: "n124", to: "n125" },
+    { id: "e151", from: "n125", to: "n54" },
+    { id: "e152", from: "n127", to: "n134" },
+    { id: "e153", from: "n134", to: "n135" },
+    { id: "e154", from: "n135", to: "n136" },
+    { id: "e155", from: "n136", to: "n137" },
+    { id: "e156", from: "n126", to: "n127" },
+    { id: "e157", from: "n128", to: "n129" },
+    { id: "e158", from: "n129", to: "n130" },
+    { id: "e159", from: "n130", to: "n131" },
+    { id: "e160", from: "n131", to: "n133" },
+    { id: "e161", from: "n133", to: "n132" },
+    { id: "e162", from: "n127", to: "n132" },
+    { id: "e163", from: "n131", to: "n140" },
+    { id: "e164", from: "n138", to: "n131" },
+    { id: "e165", from: "n140", to: "n141" },
+    { id: "e166", from: "n138", to: "n139" },
+    { id: "e167", from: "n140", to: "n142" },
+    { id: "e168", from: "n142", to: "n143" },
+    { id: "e169", from: "n143", to: "n144" },
+    { id: "e170", from: "n144", to: "n151" },
+    { id: "e171", from: "n151", to: "n152" },
+    { id: "e172", from: "n152", to: "n150" },
+    { id: "e173", from: "n150", to: "n149" },
+    { id: "e174", from: "n149", to: "n148" },
+    { id: "e175", from: "n147", to: "n148" },
+    { id: "e176", from: "n147", to: "n145" },
+    { id: "e177", from: "n99", to: "n110" },
+    { id: "e178", from: "n99", to: "n15" },
+    { id: "e179", from: "n14", to: "n98" },
+    { id: "e180", from: "n21", to: "n101" },
+    { id: "e181", from: "n111", to: "n101" },
+    { id: "e182", from: "n111", to: "n103" },
+    { id: "e183", from: "n111", to: "n113" },
+    { id: "e184", from: "n113", to: "n114" },
+    { id: "e185", from: "n114", to: "n115" },
+    { id: "e186", from: "n115", to: "n104" },
+    { id: "e187", from: "n115", to: "n116" },
+    { id: "e188", from: "n116", to: "n105" },
+    { id: "e189", from: "n116", to: "n117" },
+    { id: "e190", from: "n117", to: "n118" },
+    { id: "e191", from: "n118", to: "n112" },
+    { id: "e192", from: "n112", to: "n155" },
+    { id: "e193", from: "n155", to: "n109" },
+    { id: "e194", from: "n105", to: "n109" },
+    { id: "e195", from: "n154", to: "n118" },
+    { id: "e196", from: "n154", to: "n159" },
+    { id: "e197", from: "n159", to: "n160" },
+    { id: "e198", from: "n160", to: "n157" },
+    { id: "e199", from: "n157", to: "n112" },
+    { id: "e200", from: "n109", to: "n158" },
+    { id: "e201", from: "n158", to: "n156" },
+    { id: "e202", from: "n156", to: "n155" },
+    { id: "e203", from: "n158", to: "n161" },
+    { id: "e204", from: "n161", to: "n162" },
+    { id: "e205", from: "n162", to: "n164" },
+    { id: "e206", from: "n164", to: "n163" },
+    { id: "e207", from: "n163", to: "n153" },
+    { id: "e208", from: "n153", to: "n146" },
+    { id: "e209", from: "n146", to: "n144" },
+    { id: "e210", from: "n170", to: "n156" },
+    { id: "e211", from: "n170", to: "n171" },
+    { id: "e212", from: "n169", to: "n161" },
+    { id: "e213", from: "n164", to: "n167" },
+    { id: "e214", from: "n167", to: "n168" },
+    { id: "e215", from: "n163", to: "n166" },
+    { id: "e216", from: "n110", to: "n172" },
+    { id: "e217", from: "n172", to: "n173" },
+    { id: "e218", from: "n153", to: "n165" },
+    { id: "e219", from: "n174", to: "n96" },
+  ],
+  safePoints: [
+    { id: "s1", lng: -114.38294042567836, lat: 62.45357940231611 },
+    { id: "s2", lng: -114.3555019127056, lat: 62.449247135507136 },
+  ],
+};
+
+// ─── 初始 Agent（散布在路网节点附近） ───
+
+const initialAgents: Agent[] = [
+  createResident("a1", -114.3698, 62.4578, 2),  // near n20
+  createResident("a2", -114.3681, 62.4578, 4),  // near n17
+  createResident("a3", -114.3656, 62.4567, 3),  // near n18
+  createGuide("g1", -114.3765, 62.4518),        // near n4
+];
+
+const initialFire: FireCell[] = [
+  {
+    id: "fire-0",
+    position: [-114.3718, 62.454],
+    intensity: 1,
+    size: 80,
+    age: 0,
+    activatedAt: 0,
+  },
+];
+
+const AI_DECISION_INTERVAL = 240;
+
+// 交互模式
+type InteractionMode = "idle" | "placing-guide" | "show-dialog";
+
+/** Point-to-segment distance in lng/lat units. */
+function pointToSegmentDist(
+  px: number, py: number,
+  ax: number, ay: number,
+  bx: number, by: number,
+): number {
+  const dx = bx - ax, dy = by - ay;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq === 0) return Math.sqrt((px - ax) ** 2 + (py - ay) ** 2);
+  const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lenSq));
+  return Math.sqrt((px - (ax + t * dx)) ** 2 + (py - (ay + t * dy)) ** 2);
+}
+
+/** Max lng/lat distance to snap a click to the nearest road edge (~60m at this latitude). */
+const EDGE_SNAP_THRESHOLD = 0.0006;
+
+function findNearestEdge(lng: number, lat: number, sc: Scenario): string | null {
+  const nodeMap = new Map(sc.nodes.map((n) => [n.id, n]));
+  let bestId: string | null = null;
+  let bestDist = EDGE_SNAP_THRESHOLD;
+  for (const edge of sc.edges) {
+    const a = nodeMap.get(edge.from);
+    const b = nodeMap.get(edge.to);
+    if (!a || !b) continue;
+    const d = pointToSegmentDist(lng, lat, a.lng, a.lat, b.lng, b.lat);
+    if (d < bestDist) { bestDist = d; bestId = edge.id; }
+  }
+  return bestId;
+}
+
+function buildBlockedSegments(
+  blockedEdgeIds: Set<string>,
+  sc: Scenario,
+): Array<[[number, number], [number, number]]> {
+  const nodeMap = new Map(sc.nodes.map((n) => [n.id, n]));
+  const segs: Array<[[number, number], [number, number]]> = [];
+  for (const edge of sc.edges) {
+    if (!blockedEdgeIds.has(edge.id)) continue;
+    const a = nodeMap.get(edge.from);
+    const b = nodeMap.get(edge.to);
+    if (a && b) segs.push([[a.lng, a.lat], [b.lng, b.lat]]);
+  }
+  return segs;
+}
+
 
 export default function App() {
+  const navigate = useNavigate();
+  const [timeMs, setTimeMs] = useState(() => performance.now());
+  const [fireCells, setFireCells] = useState<FireCell[]>(initialFire);
+  const [agents, setAgents] = useState<Agent[]>(initialAgents);
+  const [isPaused, setIsPaused] = useState(true);
+  const [tick, setTick] = useState(0);
+
+  // 交互状态
+  const [mode, setMode] = useState<InteractionMode>("idle");
+  const [selectedGuideId, setSelectedGuideId] = useState<string | null>(null);
+  const guideDecisionsRef = useRef<GuideDecision[]>([]);
+  const agentsRef = useRef<Agent[]>(initialAgents);
+  const fireCellsRef = useRef<FireCell[]>(initialFire);
+  const simulationEpochRef = useRef(0);
+  const decisionRequestSeqRef = useRef(0);
+  const decisionAppliedSeqRef = useRef(0);
+  const decisionInFlightRef = useRef(false);
+
+  // 道路封堵状态
+  const [blockedEdges, setBlockedEdges] = useState(() => new Set<string>());
+  const blockedEdgesRef = useRef(new Set<string>());
+
+  // 队友设计的 UI 状态
+  const [activeTool, setActiveTool] = useState<ToolType>("none");
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+
+
+  // ─── 动画帧 ───
+  useEffect(() => {
+    let raf = 0;
+    const loop = () => {
+      setTimeMs(performance.now());
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
+  // ─── 模拟 tick 循环 ───
+  useEffect(() => {
+    agentsRef.current = agents;
+  }, [agents]);
+
+  useEffect(() => {
+    fireCellsRef.current = fireCells;
+  }, [fireCells]);
+
+  useEffect(() => {
+    if (isPaused) return;
+    const timer = window.setInterval(() => {
+      setTick((prev) => {
+        const newTick = prev + 1;
+        let nextFireCells = fireCellsRef.current;
+
+        // 1. 火势扩散
+        setFireCells((fc) => {
+          nextFireCells = stepFireSpread(fc, undefined, buildBlockedSegments(blockedEdgesRef.current, scenario));
+          fireCellsRef.current = nextFireCells;
+          return nextFireCells;
+        });
+
+        // 2. Agent 移动
+        setAgents((prevAgents) => {
+          const nextAgents = stepAgents(
+            prevAgents,
+            scenario,
+            nextFireCells,
+            newTick,
+            guideDecisionsRef.current,
+            blockedEdgesRef.current
+          );
+          agentsRef.current = nextAgents;
+          return nextAgents;
+        });
+
+        // 3. 每 N tick 请求 AI 决策
+        if (newTick % AI_DECISION_INTERVAL === 0) {
+          requestGuideDecisions(newTick);
+        }
+
+        return newTick;
+      });
+    }, 33);
+    return () => window.clearInterval(timer);
+  }, [isPaused]);
+
+  const requestGuideDecisions = useCallback(
+    async (currentTick: number) => {
+      if (decisionInFlightRef.current) return;
+      decisionInFlightRef.current = true;
+      const requestSeq = ++decisionRequestSeqRef.current;
+      const requestEpoch = simulationEpochRef.current;
+      try {
+        const decisions = await getGuideDecisions(
+          agentsRef.current,
+          scenario,
+          fireCellsRef.current,
+          currentTick,
+          blockedEdgesRef.current
+        );
+        if (simulationEpochRef.current !== requestEpoch) return;
+        if (requestSeq < decisionAppliedSeqRef.current) return;
+
+        decisionAppliedSeqRef.current = requestSeq;
+        // 即使为空也要覆盖，避免长期沿用陈旧决策
+        guideDecisionsRef.current = decisions;
+      } catch (err) {
+        console.error("[App] Guide decision error:", err);
+      } finally {
+        if (simulationEpochRef.current === requestEpoch) {
+          decisionInFlightRef.current = false;
+        }
+      }
+    },
+    []
+  );
+
+  // ─── 单击 Agent（选中/取消选中） ───
+  const handlePickAgent = useCallback(
+    (agentId: string) => {
+      const agent = agents.find((a) => a.id === agentId);
+      if (!agent || agent.kind !== "guide") return;
+
+      if (selectedGuideId === agentId) {
+        setSelectedGuideId(null);
+        setMode("idle");
+      } else {
+        setSelectedGuideId(agentId);
+        setMode("placing-guide");
+      }
+    },
+    [agents, selectedGuideId]
+  );
+
+  // ─── 双击 Agent（弹出撤离对话框） ───
+  const handleDoubleClickAgent = useCallback(
+    (agentId: string) => {
+      const agent = agents.find((a) => a.id === agentId);
+      if (!agent || agent.kind !== "guide") return;
+      setSelectedGuideId(agentId);
+      setMode("show-dialog");
+    },
+    [agents]
+  );
+
+  // ─── 点击地图空白处 ───
+  const handleMapClick = useCallback(
+    (lng: number, lat: number) => {
+      // 工具栏放置
+      if (activeTool !== "none") {
+        if (activeTool === "resident") {
+          const count = Math.floor(Math.random() * 6) + 5;
+          const newAgents: Agent[] = [];
+          for (let i = 0; i < count; i++) {
+            newAgents.push(
+              createResident(
+                `agent-${Date.now()}-${i}`,
+                lng + (Math.random() - 0.5) * 0.004,
+                lat + (Math.random() - 0.5) * 0.003,
+                Math.floor(Math.random() * 5),
+                tick
+              )
+            );
+          }
+          setAgents((prev) => [...prev, ...newAgents]);
+        } else if (activeTool === "guide") {
+          setAgents((prev) => [...prev, createGuide(`guide-${Date.now()}`, lng, lat)]);
+        } else if (activeTool === "roadblock") {
+          const edgeId = findNearestEdge(lng, lat, scenario);
+          if (edgeId) {
+            const next = new Set(blockedEdgesRef.current);
+            if (next.has(edgeId)) next.delete(edgeId);
+            else next.add(edgeId);
+            blockedEdgesRef.current = next;
+            setBlockedEdges(new Set(next));
+          }
+        } else if (activeTool === "fire") {
+          const newFire: FireCell = {
+            id: `fire-${Date.now()}`,
+            position: [lng, lat],
+            intensity: 1,
+            size: 80,
+            age: 0,
+            activatedAt: 0,
+          };
+          setFireCells((prev) => [...prev, newFire]);
+        }
+        return;
+      }
+
+      if (mode === "placing-guide" && selectedGuideId) {
+        setAgents((prev) =>
+          prev.map((a) =>
+            a.id === selectedGuideId
+              ? { ...a, lng, lat, path: [], pathIndex: 0 }
+              : a
+          )
+        );
+        console.log(`[App] 引导员 ${selectedGuideId} 移动到 [${lng.toFixed(4)}, ${lat.toFixed(4)}]`);
+      } else if (mode === "show-dialog") {
+        setMode("placing-guide");
+      } else {
+        setSelectedGuideId(null);
+        setMode("idle");
+      }
+    },
+    [mode, selectedGuideId, activeTool, tick]
+  );
+
+  // ─── Esc 键取消选中 ───
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setSelectedGuideId(null);
+        setMode("idle");
+        setIsPaused((p) => !p);
+      }
+      if (e.key === "Tab") {
+        e.preventDefault();
+        setIsSidebarOpen((prev) => !prev);
+      }
+      // 数字键 1-5 切换工具
+      const toolKeys: Record<string, ToolType> = { "1": "none", "2": "guide", "3": "resident", "4": "roadblock", "5": "fire" };
+      if (toolKeys[e.key]) {
+        setActiveTool(toolKeys[e.key]);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  // ─── 确认撤离 ───
+  const handleEvacuationConfirm = useCallback(() => {
+    setIsPaused(false);
+    setMode("idle");
+    setSelectedGuideId(null);
+  }, []);
+
+  const handleEvacuationCancel = useCallback(() => {
+    setMode("placing-guide");
+  }, []);
+
+  // ─── 重置 ───
+  const handleReset = useCallback(() => {
+    setIsPaused(true);
+    setTick(0);
+    setFireCells(initialFire);
+    setAgents(initialAgents);
+    fireCellsRef.current = initialFire;
+    agentsRef.current = initialAgents;
+    setMode("idle");
+    setSelectedGuideId(null);
+    guideDecisionsRef.current = [];
+    simulationEpochRef.current += 1;
+    decisionRequestSeqRef.current = 0;
+    decisionAppliedSeqRef.current = 0;
+    decisionInFlightRef.current = false;
+    resetGuideSessions();
+    resetEngineCache();
+    blockedEdgesRef.current = new Set();
+    setBlockedEdges(new Set());
+  }, []);
+
+  // ─── 统计 ───
+  const stats = useMemo(() => {
+    const residents = agents.filter((a) => a.kind === "resident");
+    const safe = residents.filter((a) => a.status === "safe").length;
+    const dead = residents.filter((a) => a.status === "dead").length;
+    const moving = residents.filter(
+      (a) => a.status === "moving" || a.status === "idle"
+    ).length;
+    return { total: residents.length, safe, dead, moving };
+  }, [agents]);
+
+  const isSimDone = useMemo(() => {
+    const residents = agents.filter((a) => a.kind === "resident");
+    if (tick <= 0 || residents.length === 0) return false;
+    return residents.every((a) => a.status === "safe" || a.status === "dead");
+  }, [agents, tick]);
+
+
+  // ─── 构建图层 ───
+  const layers = useMemo(() => {
+    // 计算脉冲呼吸效果
+    const pulseRatio = 1.0 + Math.sin(timeMs / 300) * 0.02;
+
+    return [
+      ...makeRoadLayers(scenario, { blockedEdges }),
+      ...makeFireLayer(fireCells, { pulseRatio }),
+      ...makeAgentsLayer(agents, {
+        timeMs,
+        selectedAgentId: selectedGuideId,
+        onPickAgent: handlePickAgent,
+        onDoubleClickAgent: handleDoubleClickAgent,
+      }),
+      ...makeSafePointsLayer(scenario.safePoints, { timeMs }),
+    ];
+  }, [timeMs, fireCells, agents, selectedGuideId, handlePickAgent, blockedEdges]);
+
+  // ─── 提示文字 ───
+  const hintText = (() => {
+    if (!isPaused) return null;
+    if (mode === "placing-guide") return "👆 点击地图放置引导员，双击引导员确认撤离";
+    return "👆 点击绿色引导员开始";
+  })();
+
   return (
-    <Routes>
-      <Route path="/" element={<HomePage />} />
-      <Route path="/simulation" element={<SimulationPage />} />
-    </Routes>
+    <div style={{ height: "100vh", width: "100vw", position: "relative", overflow: "hidden" }}>
+      {/* ── 地图层（全屏固定大小，不会受到侧边栏折叠影响！） ── */}
+      <div style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", zIndex: 1 }}>
+        
+
+
+        <StatsPanel
+          tick={tick}
+          fireCellsCount={fireCells.length}
+          totalResidents={stats.total}
+          safeCount={stats.safe}
+          deadCount={stats.dead}
+          movingCount={stats.moving}
+          isSimDone={isSimDone}
+          hintText={hintText}
+        />
+
+        {mode === "show-dialog" && selectedGuideId && (
+          <EvacuationDialog
+            guideId={selectedGuideId}
+            position={{ x: window.innerWidth / 2, y: window.innerHeight / 2 - 50 }}
+            onConfirm={handleEvacuationConfirm}
+            onCancel={handleEvacuationCancel}
+          />
+        )}
+
+        <MapView layers={layers} onMapClick={handleMapClick} isSidebarOpen={isSidebarOpen} />
+      </div>
+
+      {/* ── 右侧：Workspace 侧边栏（浮动在地图上） ── */}
+      <div
+        style={{
+          width: isSidebarOpen ? "260px" : "0px",
+          minWidth: isSidebarOpen ? "260px" : "0px",
+          transition: "width 0.3s ease",
+          background: isSidebarOpen ? "#1a1a1a" : "transparent",
+          borderLeft: isSidebarOpen ? "1px solid #333" : "0px solid transparent",
+          display: "flex",
+          flexDirection: "column",
+          boxSizing: "border-box" as const,
+          position: "absolute",
+          top: 0,
+          right: 0,
+          height: "100%",
+          zIndex: 50,
+        }}
+      >
+        <button
+          onClick={() => setIsSidebarOpen((prev) => !prev)}
+          style={{
+            position: "absolute",
+            top: "20px",
+            right: isSidebarOpen ? "auto" : "0px",
+            left: isSidebarOpen ? "20px" : "-35px",
+            background: isSidebarOpen ? "transparent" : "#1a1a1a",
+            border: isSidebarOpen ? "none" : "1px solid #333",
+            borderRight: isSidebarOpen ? "none" : "none",
+            borderRadius: isSidebarOpen ? "0" : "8px 0 0 8px",
+            padding: isSidebarOpen ? "0" : "10px 5px",
+            color: "#aaa",
+            cursor: "pointer",
+            fontSize: "18px",
+            zIndex: 60,
+          }}
+          title={isSidebarOpen ? "Collapse Workspace" : "Expand Workspace"}
+        >
+          {isSidebarOpen ? "▶" : "◀"}
+        </button>
+
+        {isSidebarOpen && (
+          <div style={{
+            padding: "20px",
+            overflowY: "auto",
+            overflowX: "hidden",
+            display: "flex",
+            flexDirection: "column",
+            height: "100%",
+            width: "260px",
+            boxSizing: "border-box",
+          }}>
+            <h2 style={{ color: "#fff", margin: "0 0 20px 40px", fontSize: "18px", width: "100%" }}>Workspace</h2>
+
+            <style>{`
+              .action-btn {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 8px;
+                width: 85%;
+                margin: 0 auto;
+                padding: 12px 16px;
+                font-size: 14px;
+                font-weight: 600;
+                color: #fff;
+                border: none;
+                border-radius: 8px;
+                cursor: pointer;
+                transition: all 0.2s cubic-bezier(0.25, 0.8, 0.25, 1);
+                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+              }
+              .action-btn:hover {
+                transform: translateY(-1px);
+                box-shadow: 0 6px 12px rgba(0, 0, 0, 0.3);
+                filter: brightness(1.1);
+              }
+              .action-btn:active {
+                transform: translateY(1px);
+                box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+              }
+            `}</style>
+
+            <div style={{ marginBottom: "32px", display: "flex", flexDirection: "column", gap: 16, alignItems: "center" }}>
+              <button
+                onClick={() => setIsPaused((p) => !p)}
+                className="action-btn"
+                style={{
+                  background: isPaused ? "linear-gradient(135deg, #2e7d32, #1b5e20)" : "linear-gradient(135deg, #c62828, #b71c1c)",
+                  border: isPaused ? "1px solid #4caf50" : "1px solid #e53935",
+                }}
+              >
+                {isPaused ? <Play size={18} /> : <Pause size={18} />}
+                {isPaused ? "Resume Sim" : "Pause Sim"}
+              </button>
+
+              <button
+                onClick={handleReset}
+                className="action-btn"
+                style={{
+                  background: "rgba(66, 66, 66, 0.6)",
+                  backdropFilter: "blur(8px)",
+                  border: "1px solid #555",
+                }}
+              >
+                <RotateCcw size={16} />
+                Reset
+              </button>
+            </div>
+
+            <Toolbar activeTool={activeTool} onSelectTool={setActiveTool} />
+            
+            {/* 放置在底部填补空白的返回按钮 */}
+            <div style={{ marginTop: "auto", paddingTop: "20px", display: "flex", justifyContent: "center" }}>
+              <button
+                onClick={() => navigate("/")}
+                style={{
+                  width: "85%",
+                  padding: "12px 16px",
+                  fontSize: "14px",
+                  background: "rgba(25, 25, 25, 0.8)",
+                  color: "white",
+                  border: "1px solid #444",
+                  borderRadius: "8px",
+                  cursor: "pointer",
+                  backdropFilter: "blur(4px)",
+                  transition: "background 0.2s",
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(50, 50, 50, 0.9)")}
+                onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(25, 25, 25, 0.8)")}
+              >
+                ← Back Home
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

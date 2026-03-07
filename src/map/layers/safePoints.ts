@@ -1,4 +1,4 @@
-import { ScatterplotLayer } from "@deck.gl/layers";
+import { ScatterplotLayer, ColumnLayer } from "@deck.gl/layers";
 import type { Layer } from "@deck.gl/core";
 import type { SafePoint } from "../../app/types";
 
@@ -34,8 +34,8 @@ export function makeSafePointsLayer(
     ringPeriodMs = 1400,
   } = opts;
 
-  const colorNormal: [number, number, number, number] = [34, 197, 94, 235];
-  const colorSelected: [number, number, number, number] = [74, 222, 128, 245];
+  const colorNormal: [number, number, number, number] = [34, 197, 94, 120];   // Increased transparency (from 255 to 120)
+  const colorSelected: [number, number, number, number] = [74, 222, 128, 180]; // Increased transparency (from 255 to 180)
 
   const t = ringPeriodMs > 0 ? (timeMs % ringPeriodMs) / ringPeriodMs : 0;
 
@@ -78,21 +78,23 @@ export function makeSafePointsLayer(
     parameters: { depthTest: false } as any,
   });
 
-  const innerLayer = new ScatterplotLayer<SafePoint>({
+  const innerLayer = new ColumnLayer<SafePoint>({
     id: "safe-points-inner",
     data: safePoints,
-    getPosition: (d) => [d.lng, d.lat, 8],
-    radiusUnits: "meters",
-    radiusMinPixels: 5,
-    getRadius: (d) => (isSelected(d) ? radiusMeters * 1.35 : radiusMeters),
-    getFillColor: (d) => (isSelected(d) ? colorSelected : colorNormal),
-    stroked: true,
-    getLineColor: () => [255, 255, 255, 220],
-    lineWidthMinPixels: 2,
+    diskResolution: 32,
+    radius: radiusMeters,
+    extruded: true,
     pickable: true,
+    elevationScale: 1,
+    getPosition: (d) => [d.lng, d.lat],
+    getElevation: (d) => (isSelected(d) ? 60 : 40), // Increased height: Base 40, selected 60
+    getFillColor: (d) => (isSelected(d) ? colorSelected : colorNormal),
+    getLineColor: () => [255, 255, 255, 255],
+    stroked: true,
+    lineWidthMinPixels: 2,
     autoHighlight: true,
     highlightColor: [255, 255, 255, 90],
-    parameters: { depthTest: false } as any,
+    parameters: { depthTest: true, depthCompare: 'always' } as any, // luma.gl v9 depth requirements
     onClick: (info) => {
       const obj = info.object as SafePoint | null;
       if (!obj) return;

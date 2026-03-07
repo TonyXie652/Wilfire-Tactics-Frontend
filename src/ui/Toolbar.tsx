@@ -1,6 +1,7 @@
 import React from 'react';
+import { MousePointer2, UserRoundCheck, Users, Construction, Flame } from 'lucide-react';
 
-type ToolType = "resident" | "guide" | "fire" | "roadblock" | "none";
+export type ToolType = "resident" | "guide" | "fire" | "roadblock" | "none";
 
 interface ToolbarProps {
   activeTool: ToolType;
@@ -8,77 +9,103 @@ interface ToolbarProps {
 }
 
 export const Toolbar: React.FC<ToolbarProps> = ({ activeTool, onSelectTool }) => {
-  const tools: { id: ToolType; label: string; color: string; iconBase: string; imgSrc?: string }[] = [
-    { id: "none", label: "Cursor", color: "#888", iconBase: "🖱️" },
-    { id: "guide", label: "Guide", color: "#fbc02d", iconBase: "🟡" },
-    { id: "resident", label: "Random Residents", color: "#1976d2", iconBase: "🔵" },
-    { id: "roadblock", label: "Roadblock", color: "#9ca3af", iconBase: "🛑" },
-    { id: "fire", label: "Fire Source", color: "#d32f2f", iconBase: "🔥" },
+  const tools: { id: ToolType; label: string; color: string; icon: React.ReactNode }[] = [
+    { id: "none", label: "Cursor", color: "#888", icon: <MousePointer2 size={20} /> },
+    { id: "guide", label: "Guide", color: "#fbc02d", icon: <UserRoundCheck size={20} /> },
+    { id: "resident", label: "Random Residents", color: "#1976d2", icon: <Users size={20} /> },
+    { id: "roadblock", label: "Roadblock", color: "#9ca3af", icon: <Construction size={20} /> },
+    { id: "fire", label: "Fire Source", color: "#d32f2f", icon: <Flame size={20} /> },
   ];
 
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: "15px",
-        marginTop: "10px",
-        flex: 1
-      }}
-    >
-      {tools.map((t) => (
-        <button
-          key={t.id}
-          onClick={() => onSelectTool(t.id)}
-          style={{
-            display: "flex",
-            flexDirection: "row",
-            alignItems: "center",
-            padding: "16px 20px",
-            background: activeTool === t.id ? t.color : "#2a2a2a",
-            color: "#fff",
-            border: `2px solid ${activeTool === t.id ? "#fff" : "#444"}`,
-            borderRadius: "8px",
-            cursor: "pointer",
-            transition: "all 0.2s cubic-bezier(0.25, 0.8, 0.25, 1)",
-            transform: activeTool === t.id ? "scale(1.02)" : "scale(1)",
-            boxShadow: activeTool === t.id ? `0 4px 12px ${t.color}66` : "none",
-            width: "100%",
-            boxSizing: "border-box",
-            flex: 1,
-            minHeight: "80px"
-          }}
-        >
-          {/* Placeholder for future 2D Icon/Sprite */}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: "50px", height: "50px" }}>
-            {t.imgSrc ? (
-              <img 
-                src={t.imgSrc} 
-                alt={t.label} 
-                style={{ 
-                  width: "100%", 
-                  height: "100%", 
-                  objectFit: "contain",
-                  // image-rendering pixelated is good for 2d pixel art
-                  imageRendering: "pixelated" 
-                }} 
-              />
-            ) : (
-              <span style={{ fontSize: "32px" }}>{t.iconBase}</span>
-            )}
-          </div>
-          {/* Label Text */}
-          <div style={{ 
-            fontSize: "16px", 
-            fontWeight: activeTool === t.id ? "bold" : "normal",
-            marginLeft: "20px",
-            flex: 1,
-            textAlign: "left"
-          }}>
-            {t.label}
-          </div>
-        </button>
-      ))}
+    <div style={{ display: "flex", flexDirection: "column", gap: "24px", marginTop: "16px", flex: 1, alignItems: "center" }}>
+      <style>{`
+        .tool-btn {
+          display: flex;
+          flex-direction: row;
+          align-items: center;
+          padding: 0 12px;
+          height: 44px;
+          color: #fff;
+          border: none;
+          background: rgba(40, 40, 40, 0.4);
+          backdrop-filter: blur(8px);
+          -webkit-backdrop-filter: blur(8px);
+          border-radius: 8px;
+          cursor: pointer;
+          transition: all 0.25s cubic-bezier(0.25, 0.8, 0.25, 1);
+          border-left: 3px solid transparent;
+          width: 85%;
+          box-sizing: border-box;
+          position: relative;
+          overflow: hidden;
+        }
+        
+        .tool-btn::after {
+          content: "";
+          position: absolute;
+          top: 0;
+          left: -100%;
+          width: 50%;
+          height: 100%;
+          background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.08), transparent);
+          transform: skewX(-20deg);
+          transition: all 0.5s ease;
+        }
+
+        .tool-btn:hover {
+          background: rgba(60, 60, 60, 0.6);
+          transform: translateY(-1px);
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+
+        .tool-btn:hover::after {
+          left: 200%;
+        }
+
+        .tool-btn.active {
+          background: rgba(50, 50, 50, 0.8);
+          /* The left border color is set inline via React */
+        }
+      `}</style>
+      
+      {tools.map((t) => {
+        const isActive = activeTool === t.id;
+        return (
+          <button
+            key={t.id}
+            onClick={() => onSelectTool(t.id)}
+            className={`tool-btn ${isActive ? "active" : ""}`}
+            style={{
+              borderLeftColor: isActive ? t.color : "transparent",
+              boxShadow: isActive ? `-2px 0 15px -2px ${t.color}` : "none",
+            }}
+          >
+            <div style={{ 
+              display: "flex", 
+              alignItems: "center", 
+              justifyContent: "center", 
+              width: "32px", 
+              color: isActive ? t.color : "rgba(255, 255, 255, 0.5)",
+              transition: "all 0.3s ease",
+            }}>
+              {t.icon}
+            </div>
+            <div style={{
+              fontSize: "14px",
+              fontWeight: isActive ? "600" : "400",
+              marginLeft: "12px",
+              flex: 1,
+              textAlign: "left",
+              color: isActive ? "#fff" : "#aeaeae",
+              transition: "all 0.3s ease",
+              fontFamily: "system-ui, -apple-system, sans-serif",
+            }}>
+              {t.label}
+            </div>
+          </button>
+        );
+      })}
     </div>
   );
 };

@@ -14,14 +14,37 @@ type Options = {
 
 const FIRE_MODEL_URL = "/models/fire.glb";
 
+
+
 // 1. 颜色计算：调整亮度和 Alpha 值，使用更明亮的颜色
 function getFireCoreColor(intensity: number): [number, number, number, number] {
   if (intensity <= 0) return [0, 0, 0, 0];
-  if (intensity === 1) return [255, 180, 50, 200];
-  if (intensity === 2) return [255, 100, 0, 220];
-  if (intensity === 3) return [255, 60, 0, 220]; // 增加少量透明度 (从 255 降至 220)
-  return [255, 0, 0, 230]; // 核心区明亮红色，但也保留一丝透明度 (从 255 降至 230)
+  if (intensity === 1) return [255, 180, 50, 230]; 
+  if (intensity === 2) return [255, 100, 0, 245];  
+  if (intensity === 3) return [255, 60, 0, 250];
+  return [255, 0, 0, 255]; // 核心区完全不透明
 }
+
+// 定义一个自定义的散点图层，用来注入 GPU 着色器实现辐射光晕
+class GlowScatterplotLayer<T = any> extends ScatterplotLayer<T> {
+  getShaders() {
+    const shaders = super.getShaders();
+    return {
+      ...shaders,
+      inject: {
+        ...shaders.inject,
+        'fs:DECKGL_FILTER_COLOR': `
+          // geometry.uv 范围是从 (-1, -1) 到 (1, 1)，中心点为 (0,0)
+          // 计算当前像素到圆心的距离 (0.0 ~ 1.0)
+          float dist = length(geometry.uv);
+          // 边缘衰减：从距离中心 0.0 开始衰减，到 1.0 全透明
+          color.a *= smoothstep(1.0, 0.0, dist);
+        `
+      }
+    };
+  }
+}
+GlowScatterplotLayer.layerName = 'GlowScatterplotLayer';
 
 // 2. 伪随机位置：增加高度偏移 (Z 轴)，解决闪烁
 function getJitteredPosition(position: [number, number], id: string, amount: number): [number, number, number] {
@@ -39,43 +62,32 @@ export function makeFireLayer(fireCells: FireCell[], opts: Options = {}): Layer[
   const cellSize = fireCells.length > 0 ? fireCells[0].size : 120; // 增大基础 CellSize
   const activeFireCells = fireCells.filter((c) => c.intensity > 0);
 
-  // 1. 底座圆圈：给底层圆圈也加上微小的高度偏移，防止重叠面积相同的圆出现互相闪烁 (Z-Fighting)
-  const fireBaseLayer = new ScatterplotLayer<FireCell>({
+  // 1. 底座辐射圆圈：重写 ScatterplotLayer，使用 GPU Shader 直接渲染边缘衰减的柔和辐射层
+  const fireBaseLayer = new GlowScatterplotLayer<FireCell>({
     id: "fire-base-layer",
     data: activeFireCells,
     visible,
-    // 将 2D 圆的位置也像模型一样根据 ID 生成一个极小的 Z 轴偏移
-    getPosition: (d) => {
-      const seed = d.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-      const offsetZ = -(seed % 10) * 0.05; // 稍微下沉一点，避免挡住最上面的火焰 3D 层
-      return [d.position[0] + 0.00055, d.position[1] + 0.00022, offsetZ];
-    },
-    getFillColor: (d) => getFireCoreColor(d.intensity),
 
-    stroked: true,
-    getLineColor: (d) => {
-      // 获取当前强度的颜色，保持色相但提高亮度和不透明度作为发光边缘
-      const core = getFireCoreColor(d.intensity);
-      // 如果火苗强度极低，就不增加刺眼的边缘了
-      if (d.intensity <= 1) return [core[0], core[1], core[2], 0];
-      // 对于中大火，边缘加上明黄/亮橙色的光环效果，并大幅增加透明度让边缘更柔和、不那么实心
-      return [255, 220, 100, 225];
-    },
-    getLineWidth: 2,
-    lineWidthUnits: 'pixels',
+    // 所有火圈统一放在同一个微小正高度上，不再使用随机 Z 偏移
+    // 这样配合 depthWrite: false + depthTest: false，所有火圈能完美叠加，不会互相遮挡
+    getPosition: (d) => [d.position[0] + 0.00055, d.position[1] + 0.00022, 0.5],
 
-    // 【解决面积过大】：缩小半径系数，之前是 0.4 + intensity * 0.2，现在改小一倍
-    getRadius: (d) => cellSize * (0.2 + d.intensity * 0.1) * pulseRatio,
+    // 单圈模式下，适当增加辐射范围
+    getRadius: (d) => cellSize * (0.4 + d.intensity * 0.15) * pulseRatio * 1.5,
     radiusUnits: 'meters',
 
-    // 【解决闪烁与横纹】：
+    // 我们把整体火区都填满高亮核心颜色，然后由于 shader 的作用，它的边缘会自动变成辐射光晕！
+    getFillColor: (d) => getFireCoreColor(d.intensity),
+
+    // 不再需要实心描边防闪烁，因为这是自然过度的辐射光晕
+    stroked: false,
+
     parameters: {
       depthWrite: false,
-      depthTest: true,
+      depthTest: false,  // 关闭深度测试！让所有火圈通过加法混合自由叠加，不互相遮挡
       blend: true,
       blendEquation: GL.FUNC_ADD,
-      // 基础圆圈使用 Alpha 混合
-      blendFunc: [GL.SRC_ALPHA, GL.ONE_MINUS_SRC_ALPHA, GL.ONE, GL.ONE_MINUS_SRC_ALPHA]
+      blendFunc: [GL.SRC_ALPHA, GL.ONE, GL.ONE, GL.ONE] // 叠加光晕，非常亮
     } as any,
   });
 
@@ -120,7 +132,7 @@ export function makeFireLayer(fireCells: FireCell[], opts: Options = {}): Layer[
     // 要打破一致性，我们可以微调一下每团火的 Y 轴（高度）缩放，
     // 不影响 X、Z 轴定位，但这会使模型在视觉上错开。
     getScale: (d) => {
-      const baseScale = 30;
+      const baseScale = 18;
       const seed = d.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % 100;
       // 在 Y 轴向上引入 0.8 ~ 1.2 的体积方差，打破完全复制的单调感
       const randomYOffset = 0.8 + (seed / 100) * 0.4;
@@ -130,7 +142,8 @@ export function makeFireLayer(fireCells: FireCell[], opts: Options = {}): Layer[
       const sZ = baseScale * pulseRatio;
       return [sX, sY, sZ];
     },
-    _lighting: 'flat', // 使用 flat 恢复模型的原本的高亮发光感，pbr 会让没有环境光的模型变黑
+    _lighting: 'flat',
+    opacity: 0.7, // 降低不透明度让 3D 火焰不要覆盖辐射光晕
 
     pickable,
     onClick: (info) => { if (info.object && onPickFireCell) onPickFireCell(info.object) },
@@ -142,8 +155,8 @@ export function makeFireLayer(fireCells: FireCell[], opts: Options = {}): Layer[
       depthTest: false,
       blend: true,
       blendEquation: GL.FUNC_ADD,
-      // 恢复轻微的加法混合，让火焰更亮，但为了不过曝，采用 SRC_ALPHA 控制
-      blendFunc: [GL.SRC_ALPHA, GL.ONE, GL.ONE, GL.ONE]
+      // 改为正常 alpha 混合，避免纯白过曝
+      blendFunc: [GL.SRC_ALPHA, GL.ONE_MINUS_SRC_ALPHA, GL.ONE, GL.ONE_MINUS_SRC_ALPHA]
     } as any,
 
     updateTriggers: { getScale: [pulseRatio] }
