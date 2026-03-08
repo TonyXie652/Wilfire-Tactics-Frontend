@@ -343,7 +343,7 @@ function updateGuide(
   const targetSpId =
     decision?.targetSafePointId ??
     guide.targetSafePointId ??
-    getFallbackSafePointId(guide, scenario, fireCells);
+    getFallbackSafePointId(guide, scenario, fireCells, blockedEdges, tick);
 
   if (!targetSpId) return guide;
 
@@ -387,7 +387,7 @@ function updateResident(
   // Re-evaluate proximity to guides every tick (unless already locked in)
   const nearbyGuide = findNearbyGuide(resident, liveGuides);
 
-  if (!isPanicking && nearbyGuide) {
+  if (nearbyGuide) {
     const fireClose = isFireWithinRadius(resident, fireCells, PANIC_RADIUS_M);
     const followChance = fireClose ? FOLLOW_STRESS_CHANCE : FOLLOW_BASE_CHANCE;
 
@@ -431,7 +431,7 @@ function updateResident(
   }
 
   if (!targetSpId) {
-    targetSpId = getFallbackSafePointId(resident, scenario, fireCells) ?? undefined;
+    targetSpId = getFallbackSafePointId(resident, scenario, fireCells, blockedEdges, tick) ?? undefined;
   }
 
   if (!targetSpId) return resident; // no reachable safe point known yet
@@ -476,12 +476,15 @@ function moveViaFlowField(
 
   const nextNodeId = field.get(curNodeId);
   if (!nextNodeId) {
-    // At the flow-field goal node. Walk directly toward the safe point so the
-    // arrival check (SAFE_ARRIVAL_RADIUS_M) can fire even if the road node is
-    // slightly offset from the safe-point marker.
-    if (finalDest) {
+    // curNodeId has no entry in the flow field for two reasons:
+    // (a) agent IS at the goal node — walk the last gap to the safe-point marker.
+    // (b) agent's node is disconnected / unreachable — do NOT walk off-road.
+    // Guard: only walk toward finalDest when the field is non-empty (target was
+    // reachable at all) AND agent is already close to finalDest (i.e. near goal
+    // node), so we don't let unreachable agents cut across fire/blocked areas.
+    if (finalDest && field.size > 0) {
       const distM = scaledDist(agent.lng, agent.lat, finalDest.lng, finalDest.lat);
-      if (distM > 0) {
+      if (distM > 0 && distM < SAFE_ARRIVAL_RADIUS_M * 5) {
         const ratio = Math.min(speed / distM, 1);
         agent.lng += (finalDest.lng - agent.lng) * ratio;
         agent.lat += (finalDest.lat - agent.lat) * ratio;
@@ -559,6 +562,8 @@ function getFallbackSafePointId(
   agent: Agent,
   scenario: Scenario,
   fireCells: FireCell[],
+  blockedEdges: Set<string>,
+  tick: number,
 ): string | null {
   if (!agent.currentNodeId) return null;
   const nodeMap = getNodeMap(scenario);
@@ -566,8 +571,13 @@ function getFallbackSafePointId(
   if (!node) return null;
 
   if (fireCells.length === 0) {
-    // No fire: just pick nearest safe point by air distance.
-    return findNearestSafePoint(agent.currentNodeId, scenario.safePoints, nodeMap)?.id ?? null;
+    // No fire: pick nearest reachable safe point by air distance.
+    const reachable = scenario.safePoints.filter((sp) => {
+      const f = getFlowField(sp.id, scenario, fireCells, blockedEdges, tick);
+      return f.size > 0 && (f.has(agent.currentNodeId!) || true);
+    });
+    const candidates = reachable.length > 0 ? reachable : scenario.safePoints;
+    return findNearestSafePoint(agent.currentNodeId, candidates, nodeMap)?.id ?? null;
   }
 
   // Compute intensity-weighted fire centroid.
@@ -582,10 +592,12 @@ function getFallbackSafePointId(
   wLat /= totalW;
 
   // Score each safe point: reward distance-from-fire, penalise distance-from-agent.
-  // Higher score = better choice.
+  // Skip safe points whose flow field is empty (target completely cut off by fire/blocks).
   let bestSp: import("../app/types").SafePoint | null = null;
   let bestScore = -Infinity;
   for (const sp of scenario.safePoints) {
+    const field = getFlowField(sp.id, scenario, fireCells, blockedEdges, tick);
+    if (field.size === 0) continue; // unreachable — skip
     const distToAgent = scaledHaversine(node.lng, node.lat, sp.lng, sp.lat);
     const distToFire  = scaledHaversine(sp.lng, sp.lat, wLng, wLat);
     // Weight: distance-from-fire counts twice as much as travel distance.
