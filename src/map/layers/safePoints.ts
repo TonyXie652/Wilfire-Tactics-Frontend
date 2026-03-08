@@ -34,8 +34,8 @@ export function makeSafePointsLayer(
     ringPeriodMs = 1400,
   } = opts;
 
-  const colorNormal: [number, number, number, number] = [34, 197, 94, 120];   // Increased transparency (from 255 to 120)
-  const colorSelected: [number, number, number, number] = [74, 222, 128, 180]; // Increased transparency (from 255 to 180)
+  const colorNormal: [number, number, number, number] = [34, 197, 94, 150];
+  const colorSelected: [number, number, number, number] = [74, 222, 128, 200];
 
   const t = ringPeriodMs > 0 ? (timeMs % ringPeriodMs) / ringPeriodMs : 0;
 
@@ -82,7 +82,7 @@ export function makeSafePointsLayer(
     id: "safe-points-inner",
     data: safePoints,
     diskResolution: 32,
-    radius: safePointRadiusMeters,
+    radius: safePointRadiusMeters * 2,
     extruded: true,
     pickable: true,
     elevationScale: 1,

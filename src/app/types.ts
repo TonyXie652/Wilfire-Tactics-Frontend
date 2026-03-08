@@ -49,6 +49,10 @@ export type Agent = {
   followingGuideId?: string;  // ID of guide being followed (if any)
   targetSafePointId?: string; // safe point this agent is routing toward
 
+  // ── interpolation (rendering only, not simulation logic) ─────────────────
+  prevLng?: number;           // position at the start of the current tick (for smooth rendering)
+  prevLat?: number;
+
   // ── timing ───────────────────────────────────────────────────────────────
   reactionDelay?: number;     // ticks after fire appears before agent reacts
   ticksSinceStart?: number;   // global tick counter at last update

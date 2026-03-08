@@ -71,10 +71,10 @@ const REPATH_INTERVAL = 4;
 const MAX_PATH_HISTORY = 200;
 
 /** Scaled metres per tick for a resident moving at a brisk real-world pace. */
-export const DEFAULT_RESIDENT_SPEED = 1.8;
+export const DEFAULT_RESIDENT_SPEED = 2;
 
-/** Guides move slightly faster than residents. */
-export const DEFAULT_GUIDE_SPEED = 2.3;
+/** Guides move significantly faster than residents. */
+export const DEFAULT_GUIDE_SPEED = 3.0;
 
 /** Speed multiplier applied during panic. */
 const PANIC_SPEED_MULTIPLIER = 1.6;
@@ -448,6 +448,12 @@ function updateResident(
 
   resident.targetSafePointId = targetSpId;
 
+  // ── If following a guide, match guide speed ──────────────────────────────
+  let finalSpeed = effectiveSpeed;
+  if (resident.followingGuideId) {
+    finalSpeed = Math.max(effectiveSpeed, DEFAULT_GUIDE_SPEED);
+  }
+
   const field = getFlowField(
     targetSpId,
     scenario,
@@ -456,7 +462,7 @@ function updateResident(
     tick,
   );
   const residentSp = scenario.safePoints.find((s) => s.id === targetSpId);
-  moveViaFlowField(resident, field, getNodeMap(scenario), effectiveSpeed, residentSp);
+  moveViaFlowField(resident, field, getNodeMap(scenario), finalSpeed, residentSp);
 
   return resident;
 }

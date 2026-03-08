@@ -1,5 +1,6 @@
 // src/map/layers/roads.ts
 import { PathLayer } from "@deck.gl/layers";
+import { PathStyleExtension } from "@deck.gl/extensions";
 import type { Layer } from "@deck.gl/core";
 import type { Scenario } from "../../app/types";
 
@@ -47,14 +48,14 @@ export function makeRoadLayers(scenario: Scenario, opts: Options = {}): Layer[] 
     onPickEdge?.(info.object.id);
   };
 
-  // 外描边层
+  // 外描边层（深色轮廓）
   const outline = new PathLayer<RoadEdgeDatum>({
     id: "roads-outline",
     data: normalData,
     getPath: (d) => d.path,
     widthUnits: "meters",
-    getWidth: () => 8,
-    getColor: () => [15, 23, 42, 255],
+    getWidth: () => 7,
+    getColor: () => [110, 120, 110, 255],
     parameters: ({ depthTest: false } as any),
     billboard: true,
     capRounded: true,
@@ -65,30 +66,48 @@ export function makeRoadLayers(scenario: Scenario, opts: Options = {}): Layer[] 
     onClick: (info) => handleClick({ object: info.object as RoadEdgeDatum | null }),
   });
 
-  // 主线层
-  const main = new PathLayer<RoadEdgeDatum>({
-    id: "roads-main",
+  // 道路底色层（略白的灰色，代表路面）
+  const roadBase = new PathLayer<RoadEdgeDatum>({
+    id: "roads-base",
     data: normalData,
     getPath: (d) => d.path,
     widthUnits: "meters",
     getWidth: () => 5,
-    getColor: () => [255, 255, 255, 255],
+    getColor: () => [235, 238, 235, 255],
     parameters: ({ depthTest: false } as any),
     billboard: true,
     capRounded: true,
     jointRounded: true,
-    pickable: true,
-    onClick: (info) => handleClick({ object: info.object as RoadEdgeDatum | null }),
+    pickable: false,
   });
 
-  // 路障层（红色）
+  // 中间绿色小方格层（安全撤离通道标识）
+  const centerDash = new PathLayer<RoadEdgeDatum>({
+    id: "roads-center-dash",
+    data: normalData,
+    getPath: (d: RoadEdgeDatum) => d.path,
+    widthUnits: "meters",
+    getWidth: () => 2,
+    getColor: () => [74, 210, 120, 255],
+    parameters: ({ depthTest: false } as any),
+    billboard: true,
+    capRounded: false,
+    jointRounded: false,
+    pickable: false,
+    extensions: [new PathStyleExtension({ dash: true })],
+    getDashArray: () => [4, 4] as [number, number],
+    dashJustified: false,
+    dashGapPickable: false,
+  } as any);
+
+  // 路障层（黄底 + 黑色条纹，模拟现实路障）
   const blockedOutline = new PathLayer<RoadEdgeDatum>({
     id: "roads-blocked-outline",
     data: blockedData,
     getPath: (d) => d.path,
     widthUnits: "meters",
     getWidth: () => 10,
-    getColor: () => [180, 0, 0, 255],
+    getColor: () => [30, 30, 30, 255],
     parameters: ({ depthTest: false } as any),
     billboard: true,
     capRounded: true,
@@ -97,13 +116,13 @@ export function makeRoadLayers(scenario: Scenario, opts: Options = {}): Layer[] 
     onClick: (info) => handleClick({ object: info.object as RoadEdgeDatum | null }),
   });
 
-  const blockedMain = new PathLayer<RoadEdgeDatum>({
-    id: "roads-blocked-main",
+  const blockedBase = new PathLayer<RoadEdgeDatum>({
+    id: "roads-blocked-base",
     data: blockedData,
     getPath: (d) => d.path,
     widthUnits: "meters",
-    getWidth: () => 6,
-    getColor: () => [239, 68, 68, 255],
+    getWidth: () => 7,
+    getColor: () => [255, 200, 0, 255],
     parameters: ({ depthTest: false } as any),
     billboard: true,
     capRounded: true,
@@ -112,5 +131,23 @@ export function makeRoadLayers(scenario: Scenario, opts: Options = {}): Layer[] 
     onClick: (info) => handleClick({ object: info.object as RoadEdgeDatum | null }),
   });
 
-  return [outline, main, blockedOutline, blockedMain];
+  const blockedStripes = new PathLayer<RoadEdgeDatum>({
+    id: "roads-blocked-stripes",
+    data: blockedData,
+    getPath: (d: RoadEdgeDatum) => d.path,
+    widthUnits: "meters",
+    getWidth: () => 5,
+    getColor: () => [20, 20, 20, 220],
+    parameters: ({ depthTest: false } as any),
+    billboard: true,
+    capRounded: false,
+    jointRounded: false,
+    pickable: false,
+    extensions: [new PathStyleExtension({ dash: true })],
+    getDashArray: () => [6, 6] as [number, number],
+    dashJustified: false,
+    dashGapPickable: false,
+  } as any);
+
+  return [outline, roadBase, centerDash, blockedOutline, blockedBase, blockedStripes];
 }

@@ -27,8 +27,12 @@ import { GuideTrackerPanel } from "./ui/GuideTrackerPanel";
 import { Toolbar } from "./ui/Toolbar";
 import type { ToolType } from "./ui/Toolbar";
 import { StatsPanel } from "./ui/StatsPanel";
-import { Play, Pause, RotateCcw } from "lucide-react";
-import type { Scenario, Agent, FireCell, GuideDecision } from "./app/types";
+import { Play, Pause, RotateCcw, Square } from "lucide-react";
+import { motion } from "framer-motion";
+import type { Scenario, Agent, FireCell, GuideDecision, WindConfig } from "./app/types";
+import { calculateMetrics, getGrade } from "./sim/evaluation";
+import type { SimulationReport } from "./sim/evaluation";
+import { generateReport } from "./sim/reportGenerator";
 
 // ─── 场景数据（来自队友手动标点） ───
 
@@ -446,7 +450,7 @@ const initialAgents: Agent[] = [];
 const initialFire: FireCell[] = [];
 
 const SIM_TICK_INTERVAL_MS = 250;
-const AI_DECISION_INTERVAL = 4;
+const AI_DECISION_INTERVAL = 1;
 const GUIDE_INFLUENCE_RADIUS_DISPLAY_M = logicMetersToMapMeters(GUIDE_INFLUENCE_RADIUS_M);
 const SAFE_ARRIVAL_RADIUS_DISPLAY_M = logicMetersToMapMeters(SAFE_ARRIVAL_RADIUS_M);
 const SAFE_POINT_RING_EXTRA_DISPLAY_M = SAFE_ARRIVAL_RADIUS_DISPLAY_M * 3;
@@ -509,6 +513,11 @@ export default function App() {
   const [agents, setAgents] = useState<Agent[]>(initialAgents);
   const [isPaused, setIsPaused] = useState(true);
   const [tick, setTick] = useState(0);
+  const [isManuallyStopped, setIsManuallyStopped] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
+  const isResettingRef = useRef(false);
+  const [settlementReport, setSettlementReport] = useState<SimulationReport | null>(null);
+  const [isGeneratingReport, setIsGeneratingReport] = useState(false);
 
   // 交互状态
   const [selectedGuideId, setSelectedGuideId] = useState<string | null>(null);
@@ -522,6 +531,10 @@ export default function App() {
   const decisionAppliedSeqRef = useRef(0);
   const decisionInFlightRef = useRef(false);
   const ignoreNextMapClickRef = useRef(false);
+  // 用于平滑插值的累加器（取代 setInterval + lastTickTimeRef 方案）
+  const simAccumulatorRef = useRef(0);   // 当前 tick 内已流逝的毫秒数
+  const lastRafTimeRef = useRef<number | null>(null); // 上一帧时间戳（null = 暂停后重置）
+  const tickRef = useRef(0);             // 仿真 tick 计数（authoritative，不依赖 React state）
 
   // 道路封堵状态
   const [blockedEdges, setBlockedEdges] = useState(() => new Set<string>());
@@ -529,68 +542,19 @@ export default function App() {
 
   // 队友设计的 UI 状态
   const [activeTool, setActiveTool] = useState<ToolType>("none");
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+  // Wind config: randomized on mount
+  const [windConfig] = useState<WindConfig>(() => ({
+    angleDeg: Math.floor(Math.random() * 360),
+    speed: 0.6,
+    baseSpreadChance: 0.09,
+  }));
+  const windConfigRef = useRef(windConfig);
+  windConfigRef.current = windConfig;
 
 
-  // ─── 动画帧 ───
-  useEffect(() => {
-    let raf = 0;
-    const loop = () => {
-      setTimeMs(performance.now());
-      raf = requestAnimationFrame(loop);
-    };
-    raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(raf);
-  }, []);
-
-  // ─── 模拟 tick 循环 ───
-  useEffect(() => {
-    agentsRef.current = agents;
-  }, [agents]);
-
-  useEffect(() => {
-    fireCellsRef.current = fireCells;
-  }, [fireCells]);
-
-  useEffect(() => {
-    if (isPaused) return;
-    const timer = window.setInterval(() => {
-      setTick((prev) => {
-        const newTick = prev + 1;
-        let nextFireCells = fireCellsRef.current;
-
-        // 1. 火势扩散
-        setFireCells((fc) => {
-          nextFireCells = stepFireSpread(fc, undefined, buildBlockedSegments(blockedEdgesRef.current, scenario));
-          fireCellsRef.current = nextFireCells;
-          return nextFireCells;
-        });
-
-        // 2. Agent 移动
-        setAgents((prevAgents) => {
-          const nextAgents = stepAgents(
-            prevAgents,
-            scenario,
-            nextFireCells,
-            newTick,
-            guideDecisionsRef.current,
-            blockedEdgesRef.current
-          );
-          agentsRef.current = nextAgents;
-          return nextAgents;
-        });
-
-        // 3. 每 N tick 请求 AI 决策
-        if (newTick % AI_DECISION_INTERVAL === 0) {
-          requestGuideDecisions(newTick);
-        }
-
-        return newTick;
-      });
-    }, SIM_TICK_INTERVAL_MS);
-    return () => window.clearInterval(timer);
-  }, [isPaused]);
-
+  // ─── AI 决策请求 ───
   const requestGuideDecisions = useCallback(
     async (currentTick: number) => {
       if (decisionInFlightRef.current) return;
@@ -607,12 +571,10 @@ export default function App() {
         );
         if (simulationEpochRef.current !== requestEpoch) return;
         if (requestSeq < decisionAppliedSeqRef.current) return;
-
         decisionAppliedSeqRef.current = requestSeq;
         if (decisions.length > 0) {
           logDecisions(decisions, currentTick);
         }
-        // 即使为空也要覆盖，避免长期沿用陈旧决策
         guideDecisionsRef.current = decisions;
       } catch (err) {
         console.error("[App] Guide decision error:", err);
@@ -624,6 +586,79 @@ export default function App() {
     },
     []
   );
+
+  // ─── 统一 rAF 循环（动画 + 仿真 tick，Fixed Timestep 累加器） ───
+  // 将 setInterval + requestAnimationFrame 合并为单一循环，彻底消除 setInterval
+  // 时序抖动导致的插值"回跳"问题，实现帧级平滑移动。
+  useEffect(() => {
+    agentsRef.current = agents;
+  }, [agents]);
+
+  useEffect(() => {
+    fireCellsRef.current = fireCells;
+  }, [fireCells]);
+
+  useEffect(() => {
+    let raf = 0;
+
+    const loop = (timestamp: number) => {
+      // ── 仿真 tick（仅在运行时） ──
+      if (!isPaused && lastRafTimeRef.current !== null) {
+        const dt = Math.min(timestamp - lastRafTimeRef.current, 100); // 最多补偿 100ms，防止失焦后大跳变
+        simAccumulatorRef.current += dt;
+
+        if (simAccumulatorRef.current >= SIM_TICK_INTERVAL_MS) {
+          simAccumulatorRef.current -= SIM_TICK_INTERVAL_MS;
+
+          const newTick = tickRef.current + 1;
+          tickRef.current = newTick;
+
+          // 1. 火势扩散
+          const nextFireCells = stepFireSpread(
+            fireCellsRef.current,
+            windConfigRef.current,
+            buildBlockedSegments(blockedEdgesRef.current, scenario)
+          );
+          fireCellsRef.current = nextFireCells;
+
+          // 2. Agent 移动（记录 prevLng/prevLat 供插值用）
+          const agentsWithPrev = agentsRef.current.map((a) => ({
+            ...a,
+            prevLng: a.lng,
+            prevLat: a.lat,
+          }));
+          const nextAgents = stepAgents(
+            agentsWithPrev,
+            scenario,
+            nextFireCells,
+            newTick,
+            guideDecisionsRef.current,
+            blockedEdgesRef.current
+          );
+          agentsRef.current = nextAgents;
+
+          // 批量更新 React state（React 18 自动批处理，一次 re-render）
+          setFireCells(nextFireCells);
+          setAgents(nextAgents);
+          setTick(newTick);
+
+          // 3. 每 N tick 请求 AI 决策
+          if (newTick % AI_DECISION_INTERVAL === 0) {
+            requestGuideDecisions(newTick);
+          }
+        }
+      }
+
+      // 暂停时重置时间基准，恢复后从头积累，避免瞬间补偿大量 tick
+      lastRafTimeRef.current = isPaused ? null : timestamp;
+
+      setTimeMs(timestamp);
+      raf = requestAnimationFrame(loop);
+    };
+
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [isPaused, requestGuideDecisions]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handlePickGuide = useCallback(
     ({ agentId, x, y }: PickedGuide) => {
@@ -706,6 +741,11 @@ export default function App() {
       if (e.key === "Tab") {
         e.preventDefault();
         setIsSidebarOpen((prev) => !prev);
+        setActiveTool("none");
+      }
+      if (e.key === " ") {
+        e.preventDefault();
+        setIsPaused((prev) => !prev);
       }
       // 数字键 1-5 切换工具
       const toolKeys: Record<string, ToolType> = { "1": "none", "2": "guide", "3": "resident", "4": "roadblock", "5": "fire" };
@@ -719,25 +759,36 @@ export default function App() {
 
   // ─── 重置 ───
   const handleReset = useCallback(() => {
-    setIsPaused(true);
-    setTick(0);
-    setFireCells(initialFire);
-    setAgents(initialAgents);
-    fireCellsRef.current = initialFire;
-    agentsRef.current = initialAgents;
-    setSelectedGuideId(null);
-    setGuideMenu(null);
-    setTrackedGuideId(null);
-    guideDecisionsRef.current = [];
-    simulationEpochRef.current += 1;
-    decisionRequestSeqRef.current = 0;
-    decisionAppliedSeqRef.current = 0;
-    decisionInFlightRef.current = false;
-    resetGuideSessions();
-    resetEngineCache();
-    clearDecisionLog();
-    blockedEdgesRef.current = new Set();
-    setBlockedEdges(new Set());
+    if (isResettingRef.current) return;
+    isResettingRef.current = true;
+    setIsResetting(true);
+
+    setTimeout(() => {
+      setIsPaused(true);
+      setIsManuallyStopped(false);
+      setTick(0);
+      setFireCells(initialFire);
+      setAgents(initialAgents);
+      fireCellsRef.current = initialFire;
+      agentsRef.current = initialAgents;
+      setSelectedGuideId(null);
+      setGuideMenu(null);
+      setTrackedGuideId(null);
+      guideDecisionsRef.current = [];
+      simulationEpochRef.current += 1;
+      decisionRequestSeqRef.current = 0;
+      decisionAppliedSeqRef.current = 0;
+      decisionInFlightRef.current = false;
+      resetGuideSessions();
+      resetEngineCache();
+      clearDecisionLog();
+      blockedEdgesRef.current = new Set();
+      setBlockedEdges(new Set());
+      
+      setSettlementReport(null);
+      isResettingRef.current = false;
+      setIsResetting(false);
+    }, 400); // 配合动画时长
   }, []);
 
   // ─── 统计 ───
@@ -756,6 +807,27 @@ export default function App() {
     if (tick <= 0 || residents.length === 0) return false;
     return residents.every((a) => a.status === "safe" || a.status === "dead");
   }, [agents, tick]);
+
+  // ─── 结算报告生成 ───
+  const showSettlement = isSimDone || isManuallyStopped;
+  useEffect(() => {
+    if (!showSettlement) return;
+    if (settlementReport || isGeneratingReport) return;
+    setIsGeneratingReport(true);
+    const metrics = calculateMetrics(agents, fireCells, tick);
+    generateReport(metrics)
+      .then((report) => setSettlementReport(report))
+      .catch((err) => {
+        console.error("[Settlement] Report generation failed:", err);
+        setSettlementReport({
+          metrics,
+          aiAnalysis: null,
+          aiSuggestions: [],
+          generatedAt: new Date().toISOString(),
+        });
+      })
+      .finally(() => setIsGeneratingReport(false));
+  }, [showSettlement]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const trackedGuide = useMemo(
     () => agents.find((a) => a.id === trackedGuideId && a.kind === "guide") ?? null,
@@ -797,11 +869,15 @@ export default function App() {
     // 计算脉冲呼吸效果
     const pulseRatio = 1.0 + Math.sin(timeMs / 300) * 0.02;
 
+    // 在两个 tick 之间做线性插值，让 agent 移动平滑（不影响任何逻辑）
+    const interpT = Math.min(1, simAccumulatorRef.current / SIM_TICK_INTERVAL_MS);
+
     return [
       ...makeRoadLayers(scenario, { blockedEdges }),
       ...makeFireLayer(fireCells, { pulseRatio }),
       ...makeAgentsLayer(agents, {
         timeMs,
+        interpT,
         selectedAgentId: selectedGuideId,
         onPickAgent: handlePickGuide,
         guideInfluenceRadiusMeters: GUIDE_INFLUENCE_RADIUS_DISPLAY_M,
@@ -820,7 +896,13 @@ export default function App() {
   const dangerOpacity = (0.3 + ((Math.sin(timeMs / 450) + 1) / 2) * 0.7) * fireDangerLevel;
 
   return (
-    <div style={{ height: "100vh", width: "100vw", position: "relative", overflow: "hidden" }}>
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: isResetting ? 0 : 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.4 }}
+      style={{ height: "100vh", width: "100vw", position: "relative", overflow: "hidden" }}
+    >
       <div
         style={{
           position: "absolute",
@@ -869,6 +951,53 @@ export default function App() {
         )}
 
         <MapView layers={layers} onMapClick={handleMapClick} isSidebarOpen={isSidebarOpen} />
+
+        {/* Wind direction arrow (visible when paused) */}
+        {isPaused && (
+          <div
+            style={{
+              position: "absolute",
+              bottom: 24,
+              left: 24,
+              zIndex: 5,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: 4,
+              pointerEvents: "none",
+            }}
+          >
+            <div
+              style={{
+                width: 64,
+                height: 64,
+                borderRadius: "50%",
+                background: "rgba(40, 40, 40, 0.7)",
+                border: "1px solid rgba(120, 120, 120, 0.5)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                backdropFilter: "blur(4px)",
+              }}
+            >
+              <svg
+                width="36"
+                height="36"
+                viewBox="0 0 36 36"
+                style={{
+                  transform: `rotate(${windConfig.angleDeg}deg)`,
+                }}
+              >
+                {/* Arrow pointing up (north) by default; rotated by angleDeg */}
+                <line x1="18" y1="32" x2="18" y2="6" stroke="#bbb" strokeWidth="2.5" strokeLinecap="round" />
+                <polygon points="18,2 12,10 24,10" fill="#bbb" />
+              </svg>
+            </div>
+            <span style={{ fontSize: 10, color: "#999", letterSpacing: 1, fontWeight: 600 }}>
+              WIND
+            </span>
+          </div>
+        )}
       </div>
 
       {/* ── 右侧：Workspace 侧边栏（浮动在地图上） ── */}
@@ -890,7 +1019,12 @@ export default function App() {
         }}
       >
         <button
-          onClick={() => setIsSidebarOpen((prev) => !prev)}
+          onClick={(e) => {
+            setIsSidebarOpen((prev) => !prev);
+            setActiveTool("none");
+            (e.currentTarget as HTMLButtonElement).blur();
+          }}
+          tabIndex={-1}
           style={{
             position: "absolute",
             top: "20px",
@@ -967,6 +1101,21 @@ export default function App() {
               </button>
 
               <button
+                onClick={() => {
+                  setIsPaused(true);
+                  setIsManuallyStopped(true);
+                }}
+                className="action-btn"
+                style={{
+                  background: "linear-gradient(135deg, #c62828, #b71c1c)",
+                  border: "1px solid #e53935",
+                }}
+              >
+                <Square size={18} fill="currentColor" />
+                Stop Sim
+              </button>
+
+              <button
                 onClick={handleReset}
                 className="action-btn"
                 style={{
@@ -1007,6 +1156,180 @@ export default function App() {
           </div>
         )}
       </div>
-    </div>
+
+      {/* 结算屏 (Settlement Overlay) */}
+      {showSettlement && (
+        <div
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "rgba(20, 20, 20, 0.6)",
+            zIndex: 9999,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            backdropFilter: "grayscale(100%) blur(4px)",
+          }}
+        >
+          <div
+            style={{
+              width: 580,
+              maxHeight: "85vh",
+              backgroundColor: "rgba(30, 30, 30, 0.95)",
+              borderRadius: 16,
+              boxShadow: "0 10px 40px rgba(0,0,0,0.8)",
+              border: "1px solid #555",
+              display: "flex",
+              flexDirection: "column",
+              padding: 32,
+              color: "white",
+              overflow: "hidden",
+            }}
+          >
+            {/* ── 标题 + 评级 ── */}
+            <h2 style={{ margin: "0 0 16px 0", textAlign: "center", color: "#e0e0e0", fontSize: 22 }}>
+              Simulation Ended
+            </h2>
+
+            {settlementReport ? (() => {
+              const grade = getGrade(settlementReport.metrics.evacuationRate);
+              const m = settlementReport.metrics;
+              return (
+                <>
+                  {/* 评级大字 */}
+                  <div style={{ textAlign: "center", marginBottom: 16 }}>
+                    <span style={{
+                      fontSize: 56,
+                      fontWeight: 900,
+                      color: grade.color,
+                      textShadow: `0 0 30px ${grade.color}66`,
+                      lineHeight: 1,
+                    }}>
+                      {grade.grade}
+                    </span>
+                    <div style={{ fontSize: 14, color: "#aaa", marginTop: 4 }}>{grade.label}</div>
+                  </div>
+
+                  <div style={{ borderTop: "1px solid #444", marginBottom: 16 }} />
+
+                  {/* 可滚动内容区 */}
+                  <div style={{
+                    flex: 1,
+                    overflowY: "auto",
+                    paddingRight: 8,
+                    fontSize: 14,
+                    lineHeight: 1.7,
+                  }}>
+                    {/* 核心指标网格 */}
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px 24px", marginBottom: 20 }}>
+                      <div>
+                        <div style={{ color: "#888", fontSize: 12 }}>Evacuation Rate</div>
+                        <div style={{ fontSize: 20, fontWeight: 700, color: "#4caf50" }}>
+                          {(m.evacuationRate * 100).toFixed(1)}%
+                        </div>
+                      </div>
+                      <div>
+                        <div style={{ color: "#888", fontSize: 12 }}>Casualty Rate</div>
+                        <div style={{ fontSize: 20, fontWeight: 700, color: "#ef4444" }}>
+                          {(m.casualtyRate * 100).toFixed(1)}%
+                        </div>
+                      </div>
+                      <div>
+                        <div style={{ color: "#888", fontSize: 12 }}>Safe / Total</div>
+                        <div style={{ fontSize: 18, fontWeight: 600 }}>
+                          {m.safeCount} / {m.totalResidents}
+                        </div>
+                      </div>
+                      <div>
+                        <div style={{ color: "#888", fontSize: 12 }}>Deaths</div>
+                        <div style={{ fontSize: 18, fontWeight: 600, color: "#ef4444" }}>
+                          {m.deadCount}
+                        </div>
+                      </div>
+                      <div>
+                        <div style={{ color: "#888", fontSize: 12 }}>Duration</div>
+                        <div style={{ fontSize: 16 }}>{m.totalTicks} ticks</div>
+                      </div>
+                      <div>
+                        <div style={{ color: "#888", fontSize: 12 }}>Avg Evac Time</div>
+                        <div style={{ fontSize: 16 }}>{m.avgEvacuationTime} ticks</div>
+                      </div>
+                      <div>
+                        <div style={{ color: "#888", fontSize: 12 }}>Guide Effectiveness</div>
+                        <div style={{ fontSize: 16 }}>{(m.guideEffectiveness * 100).toFixed(1)}%</div>
+                      </div>
+                      <div>
+                        <div style={{ color: "#888", fontSize: 12 }}>Fire Coverage</div>
+                        <div style={{ fontSize: 16 }}>{m.finalFireCoverage} cells</div>
+                      </div>
+                    </div>
+
+                    {/* AI 分析 */}
+                    {settlementReport.aiAnalysis && (
+                      <div style={{ marginBottom: 16 }}>
+                        <h3 style={{ fontSize: 15, color: "#aaa", marginBottom: 8, borderBottom: "1px solid #333", paddingBottom: 6 }}>AI Analysis</h3>
+                        <div style={{ color: "#ccc", whiteSpace: "pre-wrap" }}>
+                          {settlementReport.aiAnalysis}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* AI 建议 */}
+                    {settlementReport.aiSuggestions.length > 0 && (
+                      <div style={{ marginBottom: 8 }}>
+                        <h3 style={{ fontSize: 15, color: "#aaa", marginBottom: 8, borderBottom: "1px solid #333", paddingBottom: 6 }}>Suggestions</h3>
+                        <ol style={{ margin: 0, paddingLeft: 20, color: "#ccc" }}>
+                          {settlementReport.aiSuggestions.map((s, i) => (
+                            <li key={i} style={{ marginBottom: 6 }}>{s}</li>
+                          ))}
+                        </ol>
+                      </div>
+                    )}
+                  </div>
+                </>
+              );
+            })() : (
+              <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 12 }}>
+                <div style={{
+                  width: 36, height: 36,
+                  border: "3px solid #555",
+                  borderTopColor: "#4caf50",
+                  borderRadius: "50%",
+                  animation: "spin 0.8s linear infinite",
+                }} />
+                <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+                <div style={{ color: "#888", fontSize: 14 }}>Generating Report...</div>
+              </div>
+            )}
+
+            <button
+              onClick={() => navigate("/")}
+              style={{
+                marginTop: 20,
+                width: "100%",
+                padding: "14px",
+                background: "linear-gradient(135deg, #2e7d32, #1b5e20)",
+                color: "white",
+                border: "none",
+                borderRadius: 8,
+                cursor: "pointer",
+                fontWeight: "bold",
+                fontSize: "16px",
+                boxShadow: "0 4px 6px rgba(0,0,0,0.3)",
+                transition: "all 0.2s",
+                flexShrink: 0,
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.filter = "brightness(1.1)")}
+              onMouseLeave={(e) => (e.currentTarget.style.filter = "brightness(1)")}
+            >
+              Back Home
+            </button>
+          </div>
+        </div>
+      )}
+    </motion.div>
   );
 }

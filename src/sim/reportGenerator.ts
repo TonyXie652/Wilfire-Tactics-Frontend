@@ -27,17 +27,17 @@ async function apiPost(path: string, body: unknown): Promise<unknown> {
 
 let reportAssistantId: string | null = null;
 
-const REPORT_SYSTEM_PROMPT = `你是一个山火疏散模拟的分析专家。用户会给你一次模拟的完整数据（撤离率、死亡率、引导员决策记录等）。
+const REPORT_SYSTEM_PROMPT = `You are an expert analyst for wildfire evacuation simulations. The user will provide complete data from a simulation run (evacuation rate, casualty rate, guide decision logs, etc.).
 
-你需要做两件事：
-1. **分析**：用 2-3 段话分析这次模拟的结果。包括：
-   - 整体表现如何
-   - 引导员的决策是否合理
-   - 哪些关键因素影响了结果（火势方向、居民位置、安全点选择等）
+You need to do two things:
+1. **Analysis**: In 2-3 paragraphs, analyze the simulation results. Include:
+   - Overall performance assessment
+   - Whether the guides' decisions were reasonable
+   - Key factors that influenced the outcome (fire direction, resident placement, safe point selection, etc.)
 
-2. **建议**：给出 2-3 条具体的改进建议，帮助用户在下一次模拟中提高撤离率。
+2. **Suggestions**: Provide 2-3 specific, actionable recommendations to help the user improve the evacuation rate in the next simulation.
 
-用中文回答，简洁专业。`;
+Respond in English. Be concise and professional.`;
 
 async function ensureReportAssistant(): Promise<string> {
     if (reportAssistantId) return reportAssistantId;
@@ -61,16 +61,16 @@ function buildReportMessage(metrics: SimulationMetrics): string {
     const decisionLog = getDecisionLog();
 
     return `
-以下是一次山火疏散模拟的完整数据，请分析并给出改进建议。
+Below is the complete data from a wildfire evacuation simulation. Please analyze and provide improvement suggestions.
 
 ${metricsSummary}
 
-评级: ${grade.grade} — ${grade.label}
+Grade: ${grade.grade} — ${grade.label}
 
-AI 引导员决策记录 (共 ${decisionLog.length} 次决策):
+AI Guide Decision Log (${decisionLog.length} decisions total):
 ${decisionHistory}
 
-请分析这次模拟的结果，并给出改进建议。
+Please analyze the results of this simulation and provide improvement suggestions.
 `.trim();
 }
 
@@ -87,7 +87,7 @@ export async function generateReport(
 ): Promise<SimulationReport> {
     // 没有本地代理 → 返回纯数据报告
     if (!BACKBOARD_ENABLED) {
-        console.log("[Report] 本地 Backboard 代理不可用，生成纯数据报告");
+        console.log("[Report] Local Backboard agent unavailable, generating data-only report");
         return {
             metrics,
             aiAnalysis: null,
@@ -109,7 +109,7 @@ export async function generateReport(
 
         // 发送报告消息
         const message = buildReportMessage(metrics);
-        console.log("[Report] 发送报告请求给 AI...");
+        console.log("[Report] Sending report request to AI...");
 
         const response = (await apiPost(`/threads/${threadId}/messages`, {
             content: message,
@@ -121,7 +121,7 @@ export async function generateReport(
 
         // 解析 AI 回复
         const aiText = response.content ?? "";
-        console.log("[Report] AI 分析完成");
+        console.log("[Report] AI analysis complete");
 
         // 尝试提取建议（简单按数字列表分割）
         const suggestions = extractSuggestions(aiText);
@@ -133,10 +133,10 @@ export async function generateReport(
             generatedAt: new Date().toISOString(),
         };
     } catch (err) {
-        console.error("[Report] AI 报告生成失败:", err);
+        console.error("[Report] AI report generation failed:", err);
         return {
             metrics,
-            aiAnalysis: "AI 分析不可用（API 调用失败）",
+            aiAnalysis: "AI analysis unavailable (API call failed)",
             aiSuggestions: [],
             generatedAt: new Date().toISOString(),
         };
@@ -172,20 +172,20 @@ export function formatReportText(report: SimulationReport): string {
     ];
 
     if (report.aiAnalysis) {
-        parts.push("=== AI 分析 ===");
+        parts.push("=== AI Analysis ===");
         parts.push(report.aiAnalysis);
         parts.push("");
     }
 
     if (report.aiSuggestions.length > 0) {
-        parts.push("=== 改进建议 ===");
+        parts.push("=== Improvement Suggestions ===");
         report.aiSuggestions.forEach((s, i) => {
             parts.push(`${i + 1}. ${s}`);
         });
     }
 
     parts.push("");
-    parts.push(`报告生成时间: ${report.generatedAt}`);
+    parts.push(`Report generated at: ${report.generatedAt}`);
 
     return parts.join("\n");
 }

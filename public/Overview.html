@@ -6,35 +6,47 @@
 <title>GUIDE SYS · Tick Logic Flow</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;600;700&family=Orbitron:wght@400;700;900&display=swap');
+
 :root {
-  --bg: #0D1117;
-  --bg2: #0a0e14;
-  --grid: rgba(30,60,90,0.35);
-  --border-dim: rgba(40,100,140,0.4);
-  --border-mid: rgba(60,160,200,0.6);
-  --text-dim: rgba(140,180,210,0.55);
-  --text-mid: rgba(180,210,230,0.8);
-  --text-hi: rgba(220,240,255,0.95);
-  --cyan: #00e5ff;
-  --cyan-dim: rgba(0,229,255,0.15);
-  --cyan-glow: rgba(0,229,255,0.4);
-  --orange: #ff8c00;
-  --orange-dim: rgba(255,140,0,0.15);
+  --bg:          #0D1117;
+  --bg2:         #0a0e14;
+  --grid:        rgba(30,60,90,0.35);
+  --border-dim:  rgba(40,100,140,0.4);
+  --border-mid:  rgba(60,160,200,0.6);
+  --text-dim:    rgba(140,180,210,0.55);
+  --text-mid:    rgba(180,210,230,0.8);
+  --text-hi:     rgba(220,240,255,0.95);
+  --cyan:        #00e5ff;
+  --cyan-dim:    rgba(0,229,255,0.15);
+  --cyan-glow:   rgba(0,229,255,0.4);
+  --orange:      #ff8c00;
+  --orange-dim:  rgba(255,140,0,0.15);
   --orange-glow: rgba(255,140,0,0.45);
-  --green: #00ff88;
-  --green-glow: rgba(0,255,136,0.4);
-  --red: #ff3d3d;
-  --red-dim: rgba(255,61,61,0.12);
-  --red-glow: rgba(255,61,61,0.4);
+  --green:       #00ff88;
+  --green-dim:   rgba(0,255,136,0.12);
+  --green-glow:  rgba(0,255,136,0.4);
+  --red:         #ff3d3d;
+  --red-dim:     rgba(255,61,61,0.12);
+  --red-glow:    rgba(255,61,61,0.4);
+  --yellow:      #ffe600;
+  --signal:      #00e5ff;
 }
+
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-html, body { height: 100%; overflow: hidden; }
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+}
+
 body {
   background: var(--bg);
   font-family: 'JetBrains Mono', monospace;
   color: var(--text-mid);
   position: relative;
 }
+
+/* ── Grid Background ───────────────────────── */
 body::before {
   content: '';
   position: fixed; inset: 0; z-index: 0;
@@ -42,186 +54,524 @@ body::before {
     linear-gradient(var(--grid) 1px, transparent 1px),
     linear-gradient(90deg, var(--grid) 1px, transparent 1px);
   background-size: 40px 40px;
+  pointer-events: none;
 }
 body::after {
   content: '';
   position: fixed; inset: 0; z-index: 0;
   background: radial-gradient(ellipse at 50% 0%, rgba(0,80,120,0.18) 0%, transparent 70%);
+  pointer-events: none;
 }
+
+/* ── Layout ───────────────────────────────── */
 #app {
   position: relative; z-index: 1;
-  display: flex; flex-direction: column;
-  height: 100vh; max-width: 1600px;
-  margin: 0 auto; padding: 0 32px;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  max-width: 1600px;
+  margin: 0 auto;
+  padding: 0 32px;
 }
+
+/* ── Header ───────────────────────────────── */
 header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 14px 0 10px; border-bottom: 1px solid var(--border-dim);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 0 10px;
+  border-bottom: 1px solid var(--border-dim);
+  flex-shrink: 0;
 }
 .header-left { display: flex; flex-direction: column; gap: 2px; }
 .sys-label {
-  font-family: 'Orbitron', sans-serif; font-size: 9px; letter-spacing: 5px;
-  color: var(--text-dim); text-transform: uppercase;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 9px;
+  letter-spacing: 5px;
+  color: var(--text-dim);
+  text-transform: uppercase;
 }
 .sys-title {
-  font-family: 'Orbitron', sans-serif; font-size: 17px; font-weight: 900;
-  letter-spacing: 3px; color: var(--cyan); text-shadow: 0 0 20px var(--cyan-glow);
+  font-family: 'Orbitron', sans-serif;
+  font-size: 17px;
+  font-weight: 900;
+  letter-spacing: 3px;
+  color: var(--cyan);
+  text-shadow: 0 0 20px var(--cyan-glow);
+}
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
 }
 .status-pill {
-  display: flex; align-items: center; gap: 8px;
-  background: rgba(0,229,255,0.05); border: 1px solid var(--border-dim);
-  padding: 5px 12px; font-size: 9px; letter-spacing: 2px; color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(0,229,255,0.05);
+  border: 1px solid var(--border-dim);
+  padding: 5px 12px;
+  font-size: 9px;
+  letter-spacing: 2px;
+  color: var(--text-dim);
 }
 .status-dot {
-  width: 6px; height: 6px; background: var(--cyan); box-shadow: 0 0 8px var(--cyan);
+  width: 6px; height: 6px;
+  background: var(--cyan);
+  box-shadow: 0 0 8px var(--cyan);
   animation: blink-dot 2s ease-in-out infinite;
 }
-@keyframes blink-dot { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
-#step-counter {
-  font-family: 'Orbitron', sans-serif; font-size: 10px; letter-spacing: 2px; color: var(--cyan);
+@keyframes blink-dot {
+  0%,100% { opacity: 1; } 50% { opacity: 0.3; }
 }
+#step-counter {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: var(--cyan);
+}
+
+/* ── Flow Node Strip ──────────────────────── */
 #flow-strip {
-  display: flex; align-items: center; justify-content: center; padding: 14px 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 14px 0 10px;
+  flex-shrink: 0;
+  justify-content: center;
 }
 .flow-node {
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  width: 160px; height: 72px; border: 1px solid var(--border-mid);
-  background: rgba(10,18,28,0.92); cursor: pointer; transition: all 0.25s; position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 160px;
+  height: 72px;
+  border: 1px solid var(--border-mid);
+  background: rgba(10,18,28,0.92);
+  cursor: pointer;
+  transition: all 0.25s;
+  position: relative;
+  flex-shrink: 0;
 }
 .flow-node::before, .flow-node::after {
-  content: ''; position: absolute; width: 10px; height: 10px;
-  border-color: rgba(0,229,255,0.5); border-style: solid;
+  content: '';
+  position: absolute;
+  width: 10px; height: 10px;
+  border-color: rgba(0,229,255,0.5);
+  border-style: solid;
 }
-.flow-node::before { top: -1px; left: -1px; border-width: 1.5px 0 0 1.5px; }
-.flow-node::after { bottom: -1px; right: -1px; border-width: 0 1.5px 1.5px 0; }
+.flow-node::before {
+  top: -1px; left: -1px;
+  border-width: 1.5px 0 0 1.5px;
+}
+.flow-node::after {
+  bottom: -1px; right: -1px;
+  border-width: 0 1.5px 1.5px 0;
+}
 .flow-node-id {
-  font-family: 'Orbitron', sans-serif; font-size: 7px; letter-spacing: 2px; color: var(--text-dim); margin-bottom: 4px;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 7px;
+  letter-spacing: 2px;
+  color: var(--text-dim);
+  margin-bottom: 4px;
 }
 .flow-node-title {
-  font-size: 11px; font-weight: 700; color: var(--text-hi); letter-spacing: 0.3px; text-align: center; line-height: 1.2;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-hi);
+  letter-spacing: 0.3px;
+  text-align: center;
+  line-height: 1.2;
 }
 .flow-node-tag {
-  font-size: 7px; letter-spacing: 1.5px; margin-top: 4px; padding: 1px 5px; border: 1px solid; opacity: 0.6;
+  font-size: 7px;
+  letter-spacing: 1.5px;
+  margin-top: 4px;
+  padding: 1px 5px;
+  border: 1px solid;
+  opacity: 0.6;
 }
-.flow-arrow { display: flex; align-items: center; justify-content: center; width: 40px; position: relative; }
-.flow-arrow svg { width: 40px; height: 20px; overflow: visible; }
-.flow-arrow-line { stroke: rgba(0,180,220,0.35); stroke-width: 1.5; fill: none; transition: stroke 0.3s, stroke-width 0.3s; }
-.flow-arrow-head { fill: rgba(0,180,220,0.6); transition: fill 0.3s; }
+
+/* Connector arrow between nodes */
+.flow-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  flex-shrink: 0;
+  position: relative;
+}
+.flow-arrow svg {
+  width: 40px;
+  height: 20px;
+  overflow: visible;
+}
+.flow-arrow-line {
+  stroke: rgba(0,180,220,0.35);
+  stroke-width: 1.5;
+  fill: none;
+  transition: stroke 0.3s, stroke-width 0.3s;
+}
+.flow-arrow-head {
+  fill: rgba(0,180,220,0.6);
+  transition: fill 0.3s;
+}
+.flow-arrow-label {
+  position: absolute;
+  top: -10px;
+  font-size: 7px;
+  letter-spacing: 1px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+/* Node states */
 .flow-node.active {
-  border-color: var(--orange); background: var(--orange-dim);
+  border-color: var(--orange);
+  background: var(--orange-dim);
   box-shadow: 0 0 12px var(--orange-glow), 0 0 30px rgba(255,140,0,0.12);
 }
 .flow-node.active .flow-node-title { color: var(--orange); }
-.flow-node.visited { border-color: rgba(0,229,255,0.5); background: rgba(0,229,255,0.04); }
+.flow-node.active .flow-node-id { color: rgba(255,140,0,0.7); }
+.flow-node.active::before, .flow-node.active::after { border-color: rgba(255,140,0,0.6); }
+
+.flow-node.visited {
+  border-color: rgba(0,229,255,0.5);
+  background: rgba(0,229,255,0.04);
+}
 .flow-node.visited .flow-node-title { color: var(--cyan); }
+
 .flow-node.panic {
-  border-color: var(--red); background: var(--red-dim); box-shadow: 0 0 14px var(--red-glow);
+  border-color: var(--red);
+  background: var(--red-dim);
+  box-shadow: 0 0 14px var(--red-glow);
   animation: panic-flicker 0.4s steps(2) infinite;
 }
-@keyframes panic-flicker { 0% { opacity: 1; } 50% { opacity: 0.78; } }
+.flow-node.panic .flow-node-title { color: var(--red); }
+.flow-node.panic::before, .flow-node.panic::after { border-color: rgba(255,61,61,0.7); }
+@keyframes panic-flicker {
+  0% { opacity: 1; } 50% { opacity: 0.78; }
+}
+
+.flow-node:hover {
+  border-color: rgba(0,229,255,0.8);
+  box-shadow: 0 0 6px rgba(0,229,255,0.3);
+}
+
+/* Arrow states */
 .flow-arrow.active .flow-arrow-line { stroke: var(--orange); stroke-width: 2.5; }
 .flow-arrow.active .flow-arrow-head { fill: var(--orange); }
 .flow-arrow.visited .flow-arrow-line {
-  stroke: rgba(0,229,255,0.6); stroke-width: 2; stroke-dasharray: 4 3; animation: dash-flow 0.6s linear infinite;
+  stroke: rgba(0,229,255,0.6);
+  stroke-width: 2;
+  stroke-dasharray: 4 3;
+  animation: dash-flow 0.6s linear infinite;
 }
 .flow-arrow.visited .flow-arrow-head { fill: rgba(0,229,255,0.7); }
-@keyframes dash-flow { to { stroke-dashoffset: -14; } }
+@keyframes dash-flow {
+  to { stroke-dashoffset: -14; }
+}
+
+/* ── Main Content Area ────────────────────── */
 main {
-  flex: 1; display: grid; grid-template-columns: 1fr 320px; gap: 24px; padding: 10px 0; min-height: 0;
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 24px;
+  padding: 10px 0;
+  min-height: 0;
+  overflow: hidden;
 }
-#canvas-panel, #progress-panel {
-  display: flex; flex-direction: column; border: 1px solid var(--border-dim);
-  background: rgba(10,16,24,0.85); position: relative; overflow: hidden; min-height: 0;
+
+/* Canvas panel */
+#canvas-panel {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-dim);
+  background: rgba(10,16,24,0.85);
+  position: relative;
+  overflow: hidden;
+  min-height: 0;
 }
-#canvas-panel::before, #progress-panel::before {
-  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px;
+#canvas-panel::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 1px;
   background: linear-gradient(90deg, transparent, var(--cyan-dim), transparent);
 }
-.canvas-header, .progress-header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 8px 16px; border-bottom: 1px solid var(--border-dim); background: rgba(0,229,255,0.03);
+.canvas-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border-dim);
+  background: rgba(0,229,255,0.03);
+  flex-shrink: 0;
 }
-.canvas-header-left { display: flex; align-items: center; gap: 10px; }
+.canvas-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
 .panel-header-icon {
-  width: 8px; height: 8px; background: var(--cyan);
+  width: 8px; height: 8px;
+  background: var(--cyan);
   clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
 }
 .panel-header-text {
-  font-family: 'Orbitron', sans-serif; font-size: 9px; letter-spacing: 3px; color: var(--cyan); text-transform: uppercase;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 9px;
+  letter-spacing: 3px;
+  color: var(--cyan);
+  text-transform: uppercase;
 }
 #step-num {
-  font-family: 'Orbitron', sans-serif; font-size: 9px; letter-spacing: 3px; color: var(--orange);
+  font-family: 'Orbitron', sans-serif;
+  font-size: 9px;
+  letter-spacing: 3px;
+  color: var(--orange);
 }
 #step-name {
-  font-family: 'Orbitron', sans-serif; font-size: 13px; font-weight: 700; color: var(--orange); text-shadow: 0 0 15px var(--orange-glow); letter-spacing: 1px;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--orange);
+  text-shadow: 0 0 15px var(--orange-glow);
+  letter-spacing: 1px;
 }
-#canvas-body { flex: 1; display: flex; align-items: center; justify-content: center; padding: 12px; min-height: 0; }
+#canvas-body {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  min-height: 0;
+}
 #logic-canvas {
-  display: block; width: 100%; height: 100%; background: rgba(0,0,0,0.3);
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: rgba(0,0,0,0.3);
   border: 1px solid rgba(0,229,255,0.08);
 }
+
+/* ── Progress Panel ───────────────────────── */
+#progress-panel {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-dim);
+  background: rgba(10,16,24,0.85);
+  position: relative;
+  overflow: hidden;
+  min-height: 0;
+}
+#progress-panel::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--cyan-dim), transparent);
+}
+.progress-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border-dim);
+  background: rgba(0,229,255,0.03);
+  flex-shrink: 0;
+}
 .progress-track {
-  flex: 1; overflow-y: auto; padding: 8px 10px; display: flex; flex-direction: column; gap: 4px;
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 .progress-item {
-  display: flex; align-items: center; gap: 8px; padding: 6px 8px; border: 1px solid transparent; transition: all 0.3s; cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  transition: all 0.3s;
+  cursor: pointer;
 }
 .progress-item:hover { border-color: var(--border-dim); background: rgba(0,229,255,0.03); }
-.progress-item.done { border-color: rgba(0,229,255,0.2); background: rgba(0,229,255,0.03); }
+.progress-item.done  { border-color: rgba(0,229,255,0.2); background: rgba(0,229,255,0.03); }
 .progress-item.current { border-color: var(--orange); background: var(--orange-dim); }
-.prog-idx { font-family: 'Orbitron', sans-serif; font-size: 8px; color: var(--text-dim); min-width: 18px; }
-.prog-dot { width: 6px; height: 6px; border: 1px solid var(--text-dim); }
-.progress-item.done .prog-dot { background: var(--cyan); border-color: var(--cyan); box-shadow: 0 0 6px var(--cyan-glow); }
-.progress-item.current .prog-dot { background: var(--orange); border-color: var(--orange); box-shadow: 0 0 6px var(--orange-glow); animation: blink-dot 0.8s infinite; }
-.prog-label { font-size: 9px; color: var(--text-dim); transition: color 0.3s; letter-spacing: 0.3px; flex: 1; }
-.progress-item.done .prog-label { color: var(--text-mid); }
-.progress-item.current .prog-label { color: var(--orange); }
-.prog-tag { margin-left: auto; font-size: 7px; letter-spacing: 1.5px; padding: 1px 5px; border: 1px solid; opacity: 0.7; }
-#step-description { padding: 10px 14px; border-top: 1px solid var(--border-dim); }
-#desc-title { font-family: 'Orbitron', sans-serif; font-size: 8px; letter-spacing: 2px; color: var(--text-dim); margin-bottom: 6px; }
-#desc-text { font-size: 9px; line-height: 1.6; color: var(--text-dim); }
-#desc-text.has-content { color: var(--text-mid); }
-footer {
-  display: flex; align-items: center; justify-content: space-between; padding: 10px 0 14px; border-top: 1px solid var(--border-dim);
+.prog-idx {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 8px;
+  color: var(--text-dim);
+  min-width: 18px;
 }
-.footer-left { display: flex; align-items: center; gap: 6px; font-size: 9px; color: var(--text-dim); letter-spacing: 1.5px; }
+.prog-dot {
+  width: 6px; height: 6px;
+  border: 1px solid var(--text-dim);
+  flex-shrink: 0;
+  transition: all 0.3s;
+}
+.progress-item.done    .prog-dot { background: var(--cyan);   border-color: var(--cyan);   box-shadow: 0 0 6px var(--cyan-glow); }
+.progress-item.current .prog-dot { background: var(--orange); border-color: var(--orange); box-shadow: 0 0 6px var(--orange-glow); animation: blink-dot 0.8s infinite; }
+.prog-label {
+  font-size: 9px;
+  color: var(--text-dim);
+  transition: color 0.3s;
+  letter-spacing: 0.3px;
+  flex: 1;
+}
+.progress-item.done    .prog-label { color: var(--text-mid); }
+.progress-item.current .prog-label { color: var(--orange); }
+.prog-tag {
+  margin-left: auto;
+  font-size: 7px;
+  letter-spacing: 1.5px;
+  padding: 1px 5px;
+  border: 1px solid;
+  opacity: 0.7;
+}
+
+/* Description area inside progress panel */
+#step-description {
+  padding: 10px 14px;
+  border-top: 1px solid var(--border-dim);
+  flex-shrink: 0;
+}
+#desc-title {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 8px;
+  letter-spacing: 2px;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+}
+#desc-text {
+  font-size: 9px;
+  line-height: 1.6;
+  color: var(--text-dim);
+}
+#desc-text.has-content { color: var(--text-mid); }
+
+/* ── Footer Controls ──────────────────────── */
+footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 0 14px;
+  border-top: 1px solid var(--border-dim);
+  flex-shrink: 0;
+}
+.footer-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 9px;
+  color: var(--text-dim);
+  letter-spacing: 1.5px;
+}
 kbd {
   display: inline-flex; align-items: center; justify-content: center;
-  background: rgba(40,80,110,0.3); border: 1px solid var(--border-mid); padding: 2px 7px;
-  font-family: 'JetBrains Mono', monospace; font-size: 8px; color: var(--text-mid); min-width: 24px;
+  background: rgba(40,80,110,0.3);
+  border: 1px solid var(--border-mid);
+  padding: 2px 7px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 8px;
+  color: var(--text-mid);
+  min-width: 24px;
 }
-.controls { display: flex; gap: 8px; align-items: center; }
+.controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
 .btn {
-  font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 2px; padding: 7px 18px;
-  border: 1px solid; background: transparent; cursor: pointer; text-transform: uppercase; transition: all 0.2s; position: relative; overflow: hidden;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 2px;
+  padding: 7px 18px;
+  border: 1px solid;
+  background: transparent;
+  cursor: pointer;
+  text-transform: uppercase;
+  transition: all 0.2s;
+  position: relative;
+  overflow: hidden;
 }
-.btn::after { content: ''; position: absolute; inset: 0; background: currentColor; opacity: 0; transition: opacity 0.2s; }
+.btn::after {
+  content: '';
+  position: absolute; inset: 0;
+  background: currentColor;
+  opacity: 0; transition: opacity 0.2s;
+}
 .btn:hover::after { opacity: 0.07; }
-.btn-primary { color: var(--orange); border-color: var(--orange); }
-.btn-primary:hover { box-shadow: 0 0 16px var(--orange-glow), inset 0 0 16px rgba(255,140,0,0.05); text-shadow: 0 0 8px var(--orange-glow); }
-.btn-secondary { color: var(--text-dim); border-color: var(--border-dim); }
-.btn-secondary:hover { color: var(--cyan); border-color: var(--cyan); }
-.btn-prev { color: var(--cyan); border-color: var(--cyan); }
-.btn-prev:hover { box-shadow: 0 0 16px var(--cyan-glow), inset 0 0 16px rgba(0,229,255,0.05); text-shadow: 0 0 8px var(--cyan-glow); }
-.btn-prev:disabled, .btn-primary:disabled {
-  color: var(--border-dim); border-color: var(--border-dim); cursor: not-allowed; box-shadow: none; text-shadow: none;
+.btn-primary {
+  color: var(--orange);
+  border-color: var(--orange);
 }
+.btn-primary:hover {
+  box-shadow: 0 0 16px var(--orange-glow), inset 0 0 16px rgba(255,140,0,0.05);
+  text-shadow: 0 0 8px var(--orange-glow);
+}
+.btn-secondary {
+  color: var(--text-dim);
+  border-color: var(--border-dim);
+}
+.btn-secondary:hover {
+  color: var(--cyan);
+  border-color: var(--cyan);
+}
+.btn-prev {
+  color: var(--cyan);
+  border-color: var(--cyan);
+}
+.btn-prev:hover {
+  box-shadow: 0 0 16px var(--cyan-glow), inset 0 0 16px rgba(0,229,255,0.05);
+  text-shadow: 0 0 8px var(--cyan-glow);
+}
+.btn-prev:disabled, .btn-primary:disabled {
+  color: var(--border-dim);
+  border-color: var(--border-dim);
+  cursor: not-allowed;
+  box-shadow: none;
+  text-shadow: none;
+}
+
+/* entrance animation */
+@keyframes fadeSlide {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.anim-in { animation: fadeSlide 0.4s ease forwards; }
 </style>
 </head>
 <body>
 <div id="app">
+
+  <!-- ── Header ────────────────────────────── -->
   <header>
     <div class="header-left">
       <div class="sys-label">EVACUATION INTELLIGENCE SYSTEM</div>
       <div class="sys-title">GUIDE · TICK LOGIC FLOW</div>
     </div>
-    <div style="display:flex;align-items:center;gap:16px">
-      <div class="status-pill"><div class="status-dot"></div><span>SYS_ONLINE</span></div>
+    <div class="header-right">
+      <div class="status-pill">
+        <div class="status-dot"></div>
+        <span>SYS_ONLINE</span>
+      </div>
       <div id="step-counter">STEP 0 / 6</div>
     </div>
   </header>
+
+  <!-- ── Flow Node Strip ───────────────────── -->
   <div id="flow-strip"></div>
+
+  <!-- ── Main Content ──────────────────────── -->
   <main>
+    <!-- Canvas -->
     <div id="canvas-panel">
       <div class="canvas-header">
         <div class="canvas-header-left">
@@ -233,8 +583,12 @@ kbd {
           <span id="step-name" style="color:var(--text-dim);text-shadow:none">— — —</span>
         </div>
       </div>
-      <div id="canvas-body"><canvas id="logic-canvas"></canvas></div>
+      <div id="canvas-body">
+        <canvas id="logic-canvas"></canvas>
+      </div>
     </div>
+
+    <!-- Progress Panel -->
     <div id="progress-panel">
       <div class="progress-header">
         <div class="panel-header-icon" style="background:var(--text-dim)"></div>
@@ -247,9 +601,13 @@ kbd {
       </div>
     </div>
   </main>
+
+  <!-- ── Footer Controls ──────────────────── -->
   <footer>
     <div class="footer-left">
-      <kbd>←</kbd> prev · <kbd>SPACE</kbd> / <kbd>→</kbd> next · <kbd>R</kbd> reset
+      <kbd>←</kbd> prev &nbsp;·&nbsp;
+      <kbd>SPACE</kbd> / <kbd>→</kbd> next &nbsp;·&nbsp;
+      <kbd>R</kbd> reset
     </div>
     <div class="controls">
       <button class="btn btn-secondary" id="btn-reset">↺ RESET</button>
@@ -257,163 +615,450 @@ kbd {
       <button class="btn btn-primary" id="btn-next">NEXT ›</button>
     </div>
   </footer>
+
 </div>
+
 <script>
 (() => {
 'use strict';
-const STEPS = [
-  { id:0, num:'STEP_01', name:'SURVIVAL CHECK', color:'#00ff88', glowColor:'rgba(0,255,136,0.4)', tag:'GATE', tagColor:'#00ff88', desc:'Check if the guide agent is still alive. Dead agents are removed from the tick cycle.' },
-  { id:1, num:'STEP_02', name:'CLOUD DECISION', color:'#4488ff', glowColor:'rgba(68,136,255,0.4)', tag:'CLOUD', tagColor:'#4488ff', desc:'Query cloud for navigation commands. Falls back to local pathfinding if cloud is unavailable.' },
-  { id:2, num:'STEP_03', name:'REPATH TRIGGER', color:'#ffe600', glowColor:'rgba(255,230,0,0.4)', tag:'PERF', tagColor:'#ffe600', desc:'Check the needsRepath flag. Skip recalculation if the current path is still valid.' },
-  { id:3, num:'STEP_04', name:'A* ROUTING ENGINE', color:'#00e5ff', glowColor:'rgba(0,229,255,0.4)', tag:'A*', tagColor:'#00e5ff', desc:'Run A* pathfinding on the grid. Expands wavefront, avoids fire tiles, finds shortest safe route.' },
-  { id:4, num:'STEP_05', name:'PLAN-B FALLBACK', color:'#ff8c00', glowColor:'rgba(255,140,0,0.4)', tag:'FALLBACK', tagColor:'#ff8c00', desc:'Primary path blocked. Probe alternative safe zones in priority order and lock onto the first viable one.' },
-  { id:5, num:'STEP_06', name:'ULTIMATE PANIC MODE', color:'#ff3d3d', glowColor:'rgba(255,61,61,0.4)', tag:'PANIC', tagColor:'#ff3d3d', desc:'No safe path exists. Agent enters panic mode and moves by repulsion from fire.' },
-];
-const strip = document.getElementById('flow-strip');
-const track = document.getElementById('progress-track');
-const lc = document.getElementById('logic-canvas');
-const ctx = lc.getContext('2d');
-let cw = 0, ch = 0, currentStep = -1, raf = null, animT = 0;
 
-function resizeCanvas() {
-  const rect = document.getElementById('canvas-body').getBoundingClientRect();
-  cw = Math.floor(rect.width - 24);
-  ch = Math.floor(rect.height - 24);
-  lc.width = cw;
-  lc.height = ch;
-  lc.style.width = cw + 'px';
-  lc.style.height = ch + 'px';
-}
-function buildFlow() {
+const STEPS = [
+  { id:0, num:'STEP_01', name:'SURVIVAL CHECK',      color:'#00ff88',  glowColor:'rgba(0,255,136,0.4)',  tag:'GATE',     tagColor:'#00ff88',  connLabel:'ALIVE',          desc:'Check if the guide agent is still alive. Dead agents are removed from the tick cycle.' },
+  { id:1, num:'STEP_02', name:'CLOUD DECISION',      color:'#4488ff',  glowColor:'rgba(68,136,255,0.4)', tag:'CLOUD',    tagColor:'#4488ff',  connLabel:'LOCAL_FALLBACK', desc:'Query cloud for navigation commands. Falls back to local pathfinding if cloud is unavailable.' },
+  { id:2, num:'STEP_03', name:'REPATH TRIGGER',      color:'#ffe600',  glowColor:'rgba(255,230,0,0.4)',  tag:'PERF',     tagColor:'#ffe600',  connLabel:'NEEDS_REPATH',   desc:'Check the needsRepath flag. Skip recalculation if the current path is still valid.' },
+  { id:3, num:'STEP_04', name:'A* ROUTING ENGINE',   color:'#00e5ff',  glowColor:'rgba(0,229,255,0.4)',  tag:'A*',       tagColor:'#00e5ff',  connLabel:'PATH_BLOCKED',   desc:'Run A* pathfinding on the grid. Expands wavefront, avoids fire tiles, finds shortest safe route.' },
+  { id:4, num:'STEP_05', name:'PLAN-B FALLBACK',     color:'#ff8c00',  glowColor:'rgba(255,140,0,0.4)',  tag:'FALLBACK', tagColor:'#ff8c00',  connLabel:'ALL_BLOCKED',    desc:'Primary path blocked. Probe alternative safe zones in priority order and lock onto the first viable one.' },
+  { id:5, num:'STEP_06', name:'ULTIMATE PANIC MODE', color:'#ff3d3d',  glowColor:'rgba(255,61,61,0.4)',  tag:'PANIC',    tagColor:'#ff3d3d',  connLabel:'',               desc:'No safe path exists. Agent enters panic mode — repulsion vectors from fire drive erratic movement.' },
+];
+
+// ─── Build flow strip ─────────────────────────────────────────
+function buildFlowStrip() {
+  const strip = document.getElementById('flow-strip');
   strip.innerHTML = '';
-  STEPS.forEach((step, i) => {
+  STEPS.forEach((s, i) => {
+    // Node card
     const node = document.createElement('div');
     node.className = 'flow-node';
     node.id = `fnode-${i}`;
-    node.innerHTML = `<div class="flow-node-id">NODE_0${i}</div><div class="flow-node-title">${step.name}</div><div class="flow-node-tag" style="color:${step.tagColor};border-color:${step.tagColor}">${step.tag}</div>`;
-    node.onclick = () => goToStep(i);
+    node.innerHTML = `
+      <div class="flow-node-id">NODE_0${i}</div>
+      <div class="flow-node-title">${s.name}</div>
+      <div class="flow-node-tag" style="color:${s.tagColor};border-color:${s.tagColor}">${s.tag}</div>
+    `;
+    node.addEventListener('click', () => goToStep(i));
     strip.appendChild(node);
+
+    // Arrow between nodes
     if (i < STEPS.length - 1) {
       const arrow = document.createElement('div');
       arrow.className = 'flow-arrow';
       arrow.id = `farrow-${i}`;
-      arrow.innerHTML = `<svg viewBox="0 0 40 20"><line class="flow-arrow-line" x1="0" y1="10" x2="30" y2="10"/><polygon class="flow-arrow-head" points="28,5 38,10 28,15"/></svg>`;
+      arrow.innerHTML = `
+        <svg viewBox="0 0 40 20">
+          <line class="flow-arrow-line" x1="0" y1="10" x2="30" y2="10"/>
+          <polygon class="flow-arrow-head" points="28,5 38,10 28,15"/>
+        </svg>
+      `;
       strip.appendChild(arrow);
     }
   });
 }
-function buildTrack() {
+
+// ─── Canvas ───────────────────────────────────────────────────
+const lc = document.getElementById('logic-canvas');
+const lctx = lc.getContext('2d');
+let CW, CH;
+let animFrame = null, animT = 0;
+
+function resizeCanvas() {
+  const body = document.getElementById('canvas-body');
+  const rect = body.getBoundingClientRect();
+  CW = Math.floor(rect.width - 24);
+  CH = Math.floor(rect.height - 24);
+  lc.width = CW;
+  lc.height = CH;
+  lc.style.width = CW + 'px';
+  lc.style.height = CH + 'px';
+}
+
+// ─── Animations per step ──────────────────────────────────────
+const ANIM = [
+  // 0 · SURVIVAL CHECK
+  function(ctx, t, col) {
+    ctx.clearRect(0,0,CW,CH);
+    const y = CH * 0.25;
+    drawScanLine(ctx, t, 20, y, CW-20, y, col, 3);
+    const forkX = CW/2, forkY = y, tFork = Math.max(0,(t-0.35)/0.65);
+    if(tFork>0){
+      drawLine(ctx, forkX, forkY, lerp(forkX,CW*0.15,tFork), lerp(forkY,CH-40,tFork), 'rgba(255,61,61,0.7)', 2);
+      if(tFork>0.7) drawLabel(ctx, CW*0.1, CH-24, '✗  DEAD', 'rgba(255,80,80,0.9)', 12);
+    }
+    if(tFork>0){
+      drawLine(ctx, forkX, forkY, lerp(forkX,CW*0.85,tFork), lerp(forkY,CH-40,tFork), 'rgba(0,255,136,0.7)', 2);
+      if(tFork>0.7) drawLabel(ctx, CW*0.75, CH-24, '✓  SAFE', 'rgba(0,255,136,0.9)', 12);
+    }
+    if(tFork>0.5){
+      drawLine(ctx, forkX, forkY, forkX, lerp(forkY,CH-40,tFork), 'rgba(0,200,255,0.5)', 1.5);
+      if(tFork>0.8) drawLabel(ctx, forkX+8, CH-26, 'CONTINUE', 'rgba(0,200,255,0.6)', 11);
+    }
+  },
+  // 1 · CLOUD DECISION
+  function(ctx, t, col) {
+    ctx.clearRect(0,0,CW,CH);
+    const cx=CW/2, cy=CH*0.22, r=Math.min(32, CH*0.12);
+    drawPulseNode(ctx, cx, cy, r, t, 'rgba(68,136,255,0.8)', 'rgba(68,136,255,0.2)');
+    drawLabel(ctx, cx-20, cy+5, 'CLOUD', 'rgba(120,180,255,0.9)', 11);
+    drawScanLine(ctx, t, cx, 0, cx, cy-r, col, 2);
+    const tA = Math.max(0,(t-0.4)/0.6);
+    if(tA>0){
+      drawLine(ctx,cx,cy+r,lerp(cx,CW*0.15,tA),lerp(cy+r,CH-30,tA),'rgba(68,136,255,0.8)',2);
+      if(tA>0.75) drawLabel(ctx,CW*0.05,CH-16,'CMD →','rgba(120,180,255,0.9)',11);
+    }
+    if(tA>0){
+      drawLine(ctx,cx,cy+r,lerp(cx,CW*0.85,tA),lerp(cy+r,CH-30,tA),'rgba(0,229,255,0.5)',1.5);
+      if(tA>0.75) drawLabel(ctx,CW*0.72,CH-16,'LOCAL →','rgba(0,180,220,0.7)',11);
+    }
+  },
+  // 2 · REPATH TRIGGER
+  function(ctx, t, col) {
+    ctx.clearRect(0,0,CW,CH);
+    const bw=Math.min(120,CW*0.25), bh=Math.min(56,CH*0.2);
+    const bx=CW/2-bw/2, by=CH/2-bh/2;
+    const tBox=Math.min(t/0.3,1);
+    ctx.globalAlpha=tBox;
+    ctx.strokeStyle='rgba(255,230,0,0.6)'; ctx.lineWidth=1.5;
+    ctx.strokeRect(bx,by,bw*tBox,bh);
+    ctx.globalAlpha=1;
+    if(tBox>0.6) drawLabel(ctx,CW/2-36,CH/2+6,'needsRepath','rgba(255,230,0,0.8)',10);
+    drawScanLine(ctx, t, CW/2, 10, CW/2, by, col, 2);
+    const tA=Math.max(0,(t-0.45)/0.55);
+    if(tA>0){
+      drawLine(ctx,CW/2,by+bh,lerp(CW/2,CW*0.12,tA),lerp(by+bh,CH-30,tA),'rgba(0,255,136,0.6)',2);
+      if(tA>0.7) drawLabel(ctx,CW*0.04,CH-16,'SKIP ↷','rgba(0,255,136,0.8)',11);
+    }
+    if(tA>0){
+      drawLine(ctx,CW/2,by+bh,lerp(CW/2,CW*0.88,tA),lerp(by+bh,CH-30,tA),'rgba(255,230,0,0.7)',2);
+      if(tA>0.7) drawLabel(ctx,CW*0.78,CH-16,'REPATH','rgba(255,230,0,0.9)',11);
+    }
+  },
+  // 3 · A* ROUTING
+  function(ctx, t, col) {
+    ctx.clearRect(0,0,CW,CH);
+    const rows=6, cols=Math.max(8, Math.floor(CW/60));
+    const cw=CW/(cols+1), ch=CH/(rows+2);
+    const startC=0, startR=3, goalC=cols-1;
+    for(let r=0;r<rows;r++){
+      for(let c=0;c<cols;c++){
+        const x=(c+1)*cw, y=(r+1)*ch;
+        const d=Math.abs(c-startC)+Math.abs(r-startR);
+        const appear=d/(cols+rows)*0.8;
+        const a=Math.max(0,Math.min(1,(t-appear)/0.25));
+        if(a<=0) continue;
+        const isFire=(c===Math.floor(cols*0.4)&&r>=1&&r<=4)||(c===Math.floor(cols*0.4)+1&&r===3);
+        const isPath=!isFire&&r===3&&c<=goalC;
+        const nodeCol=isFire?`rgba(255,80,0,${a*0.9})`:isPath?`rgba(0,229,255,${a*0.8})`:`rgba(60,140,200,${a*0.3})`;
+        ctx.beginPath(); ctx.arc(x,y,isFire?7:4,0,Math.PI*2);
+        ctx.fillStyle=nodeCol; ctx.fill();
+        if(c<cols-1){
+          const a2=Math.max(0,Math.min(1,(t-(appear+0.1))/0.2));
+          ctx.globalAlpha=a2*0.35;
+          ctx.strokeStyle=isFire?'rgba(255,80,0,0.5)':'rgba(0,180,220,0.5)';
+          ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo((c+2)*cw,y); ctx.stroke();
+          ctx.globalAlpha=1;
+        }
+      }
+    }
+    const tPath=Math.max(0,(t-0.5)/0.5);
+    if(tPath>0){
+      ctx.strokeStyle=`rgba(0,255,136,${tPath*0.9})`; ctx.lineWidth=2.5;
+      ctx.beginPath();
+      for(let c=0;c<Math.floor(tPath*(goalC+1));c++){
+        const x=(c+1)*cw,y=(startR+1)*ch;
+        c===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+      }
+      ctx.stroke();
+      if(tPath>0.9) drawLabel(ctx,CW-100,CH-14,'PATH FOUND','rgba(0,255,136,0.9)',10);
+    }
+  },
+  // 4 · PLAN-B FALLBACK
+  function(ctx, t, col) {
+    ctx.clearRect(0,0,CW,CH);
+    const agent={x:CW*0.12,y:CH/2};
+    drawPulseNode(ctx,agent.x,agent.y,10,t,'rgba(255,140,0,0.9)','rgba(255,140,0,0.2)');
+    const targets=[
+      {x:CW*0.85,y:CH*0.18, blocked:true},
+      {x:CW*0.85,y:CH*0.5, blocked:true},
+      {x:CW*0.85,y:CH*0.82, blocked:false},
+    ];
+    targets.forEach((tg,i)=>{
+      const tA=i*0.15;
+      const a=Math.max(0,Math.min(1,(t-tA)/0.2));
+      if(a<=0) return;
+      const tP=Math.max(0,Math.min(1,(t-tA-0.1)/0.25));
+      const ex=lerp(agent.x,tg.x,tP), ey=lerp(agent.y,tg.y,tP);
+      ctx.globalAlpha=a*0.6;
+      ctx.strokeStyle=tg.blocked?'rgba(255,61,61,0.6)':'rgba(0,255,136,0.7)';
+      ctx.lineWidth=1.5; ctx.setLineDash([4,5]);
+      ctx.beginPath(); ctx.moveTo(agent.x,agent.y); ctx.lineTo(ex,ey); ctx.stroke();
+      ctx.setLineDash([]); ctx.globalAlpha=1;
+      ctx.beginPath(); ctx.arc(tg.x,tg.y,9,0,Math.PI*2);
+      ctx.fillStyle=tg.blocked?`rgba(255,61,61,${a*0.3})`:`rgba(0,255,136,${a*0.4})`;
+      ctx.fill();
+      ctx.strokeStyle=tg.blocked?`rgba(255,61,61,${a*0.8})`:`rgba(0,255,136,${a*0.8})`;
+      ctx.lineWidth=1.5; ctx.stroke();
+      if(tP>0.95){
+        if(tg.blocked) drawX(ctx,tg.x,tg.y,'rgba(255,80,80,0.9)');
+        else drawCheck(ctx,tg.x,tg.y,'rgba(0,255,136,0.9)');
+      }
+    });
+    const tF=Math.max(0,(t-0.75)/0.25);
+    if(tF>0){
+      const tg=targets[2];
+      ctx.strokeStyle=`rgba(0,255,136,${tF*0.9})`; ctx.lineWidth=2.5;
+      ctx.beginPath(); ctx.moveTo(agent.x,agent.y);
+      ctx.lineTo(lerp(agent.x,tg.x,tF), lerp(agent.y,tg.y,tF));
+      ctx.stroke();
+    }
+  },
+  // 5 · PANIC
+  function(ctx, t, col) {
+    ctx.clearRect(0,0,CW,CH);
+    const fires=[{x:CW*0.5,y:CH*0.35},{x:CW*0.58,y:CH*0.65},{x:CW*0.44,y:CH*0.57}];
+    const agentBase={x:CW*0.22,y:CH/2};
+    fires.forEach((f,i)=>{
+      const phase=(t*4+i*1.2)%(Math.PI*2);
+      const r=14+Math.sin(phase)*4;
+      const g=ctx.createRadialGradient(f.x,f.y,0,f.x,f.y,r);
+      g.addColorStop(0,'rgba(255,180,0,0.9)');
+      g.addColorStop(0.4,'rgba(255,60,0,0.6)');
+      g.addColorStop(1,'rgba(180,0,0,0)');
+      ctx.beginPath(); ctx.arc(f.x,f.y,r,0,Math.PI*2);
+      ctx.fillStyle=g; ctx.fill();
+    });
+    fires.forEach((f,i)=>{
+      const tV=Math.max(0,(t-i*0.15)/0.4);
+      if(tV<=0) return;
+      const dx=agentBase.x-f.x, dy=agentBase.y-f.y;
+      const len=Math.sqrt(dx*dx+dy*dy)+0.01;
+      const vx=dx/len*45*tV, vy=dy/len*45*tV;
+      ctx.globalAlpha=tV*0.7;
+      ctx.strokeStyle='rgba(255,140,0,0.7)'; ctx.lineWidth=1.5;
+      ctx.fillStyle='rgba(255,140,0,0.7)';
+      drawArrow(ctx,agentBase.x,agentBase.y,agentBase.x+vx,agentBase.y+vy);
+      ctx.globalAlpha=1;
+    });
+    const noise=t>0.5?Math.sin(t*23)*14*(t-0.5)*2:0;
+    const noise2=t>0.5?Math.cos(t*17)*10*(t-0.5)*2:0;
+    const ax=agentBase.x+noise, ay=agentBase.y+noise2;
+    if(t>0.3){
+      ctx.globalAlpha=0.3;
+      ctx.strokeStyle='rgba(255,61,61,0.6)'; ctx.lineWidth=1;
+      ctx.beginPath(); ctx.moveTo(agentBase.x,agentBase.y);
+      for(let i=0;i<12;i++){
+        const tt=0.3+i*0.05;
+        if(tt>t) break;
+        ctx.lineTo(agentBase.x+Math.sin(tt*23)*14*(tt-0.3)*3, agentBase.y+Math.cos(tt*17)*10*(tt-0.3)*3);
+      }
+      ctx.stroke(); ctx.globalAlpha=1;
+    }
+    const phase2=(t*8)%(Math.PI*2);
+    drawPulseNode(ctx,ax,ay,10+Math.sin(phase2)*3,t,'rgba(255,61,61,0.95)','rgba(255,0,0,0.25)');
+    drawLabel(ctx,CW/2-40,CH-14,'PANIC VECTOR','rgba(255,80,80,0.8)',11);
+  },
+];
+
+// ── Canvas helpers ────────────────────────────────────────────
+function lerp(a,b,t){ return a+(b-a)*t; }
+function drawScanLine(ctx, t, x1,y1,x2,y2, col, lw){
+  const prog=Math.min(t/0.4,1);
+  ctx.strokeStyle=col; ctx.lineWidth=lw;
+  ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(lerp(x1,x2,prog),lerp(y1,y2,prog)); ctx.stroke();
+}
+function drawLine(ctx,x1,y1,x2,y2,col,lw){
+  ctx.strokeStyle=col; ctx.lineWidth=lw;
+  ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+}
+function drawLabel(ctx,x,y,text,col,sz){
+  ctx.font=`${sz}px 'JetBrains Mono',monospace`;
+  ctx.fillStyle=col; ctx.fillText(text,x,y);
+}
+function drawPulseNode(ctx,x,y,r,t,col,glow){
+  const phase=(t*4)%(Math.PI*2);
+  const outerR=r+Math.sin(phase)*3;
+  const g=ctx.createRadialGradient(x,y,0,x,y,outerR);
+  g.addColorStop(0,col); g.addColorStop(1,glow);
+  ctx.beginPath(); ctx.arc(x,y,outerR,0,Math.PI*2);
+  ctx.fillStyle=g; ctx.fill();
+}
+function drawArrow(ctx,x1,y1,x2,y2){
+  ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+  const a=Math.atan2(y2-y1,x2-x1);
+  ctx.beginPath();
+  ctx.moveTo(x2,y2);
+  ctx.lineTo(x2-8*Math.cos(a-0.4),y2-8*Math.sin(a-0.4));
+  ctx.lineTo(x2-8*Math.cos(a+0.4),y2-8*Math.sin(a+0.4));
+  ctx.closePath(); ctx.fill();
+}
+function drawX(ctx,x,y,col){
+  ctx.strokeStyle=col; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.moveTo(x-6,y-6); ctx.lineTo(x+6,y+6); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x+6,y-6); ctx.lineTo(x-6,y+6); ctx.stroke();
+}
+function drawCheck(ctx,x,y,col){
+  ctx.strokeStyle=col; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.moveTo(x-6,y); ctx.lineTo(x-1,y+5); ctx.lineTo(x+7,y-5); ctx.stroke();
+}
+
+function startAnim(stepIdx) {
+  if (startAnim._cleanup) startAnim._cleanup();
+  animT = 0;
+  if (stepIdx < 0) { lctx.clearRect(0,0,CW,CH); return; }
+  const s = STEPS[stepIdx];
+  let loopTimeout = null;
+  function tick() {
+    animT = Math.min(animT + 0.005, 1);
+    ANIM[stepIdx](lctx, animT, s.color);
+    if (animT < 1) {
+      animFrame = requestAnimationFrame(tick);
+    } else {
+      loopTimeout = setTimeout(() => { animT = 0; animFrame = requestAnimationFrame(tick); }, 1200);
+    }
+  }
+  startAnim._cleanup = () => { cancelAnimationFrame(animFrame); clearTimeout(loopTimeout); };
+  animFrame = requestAnimationFrame(tick);
+}
+
+// ─── State ────────────────────────────────────────────────────
+let currentStep = -1;
+
+// ─── Build progress track ─────────────────────────────────────
+function buildProgressTrack() {
+  const track = document.getElementById('progress-track');
   track.innerHTML = '';
-  STEPS.forEach((step, i) => {
-    const item = document.createElement('div');
-    item.className = 'progress-item';
-    item.id = `prog-${i}`;
-    item.innerHTML = `<span class="prog-idx">${String(i + 1).padStart(2, '0')}</span><span class="prog-dot"></span><span class="prog-label">${step.name}</span><span class="prog-tag" style="color:${step.tagColor};border-color:${step.tagColor}">${step.tag}</span>`;
-    item.onclick = () => goToStep(i);
-    track.appendChild(item);
+  STEPS.forEach((s, i) => {
+    const el = document.createElement('div');
+    el.className = 'progress-item';
+    el.id = `prog-${i}`;
+    el.innerHTML = `
+      <span class="prog-idx">${String(i+1).padStart(2,'0')}</span>
+      <span class="prog-dot"></span>
+      <span class="prog-label">${s.name}</span>
+      <span class="prog-tag" style="color:${s.tagColor};border-color:${s.tagColor}">${s.tag}</span>
+    `;
+    el.addEventListener('click', () => goToStep(i));
+    track.appendChild(el);
   });
 }
-function updateUi() {
-  STEPS.forEach((step, i) => {
-    const node = document.getElementById(`fnode-${i}`);
-    const item = document.getElementById(`prog-${i}`);
-    if (!node || !item) return;
-    node.classList.remove('active', 'visited', 'panic');
-    item.classList.remove('done', 'current');
-    if (i < currentStep) {
-      node.classList.add('visited');
-      item.classList.add('done');
-    }
+
+function updateProgress() {
+  STEPS.forEach((_, i) => {
+    const el = document.getElementById(`prog-${i}`);
+    if (!el) return;
+    el.classList.remove('done', 'current');
+    if (i < currentStep) el.classList.add('done');
+    if (i === currentStep) el.classList.add('current');
+  });
+}
+
+function updateFlowStrip() {
+  STEPS.forEach((_, i) => {
+    const n = document.getElementById(`fnode-${i}`);
+    if (!n) return;
+    n.classList.remove('active', 'visited', 'panic');
+    if (i < currentStep) n.classList.add('visited');
     if (i === currentStep) {
-      node.classList.add(i === 5 ? 'panic' : 'active');
-      item.classList.add('current');
-    }
-    if (i < STEPS.length - 1) {
-      const arrow = document.getElementById(`farrow-${i}`);
-      if (!arrow) return;
-      arrow.classList.remove('active', 'visited');
-      if (i < currentStep) arrow.classList.add('visited');
-      if (i === currentStep - 1) arrow.classList.add('active');
+      if (i === 5) n.classList.add('panic');
+      else n.classList.add('active');
     }
   });
-  const desc = document.getElementById('desc-text');
-  const stepName = document.getElementById('step-name');
-  const stepNum = document.getElementById('step-num');
-  const counter = document.getElementById('step-counter');
-  if (currentStep < 0) {
-    desc.textContent = 'Click a node or press SPACE to begin.';
-    desc.classList.remove('has-content');
-    stepName.textContent = '— — —';
-    stepName.style.color = 'var(--text-dim)';
-    stepName.style.textShadow = 'none';
-    stepNum.textContent = 'AWAITING';
-    counter.textContent = `STEP 0 / ${STEPS.length}`;
-  } else {
-    const step = STEPS[currentStep];
-    desc.textContent = step.desc;
-    desc.classList.add('has-content');
-    stepName.textContent = step.name;
-    stepName.style.color = step.color;
-    stepName.style.textShadow = `0 0 12px ${step.glowColor}`;
-    stepNum.textContent = step.num;
-    counter.textContent = `STEP ${currentStep + 1} / ${STEPS.length}`;
+  for (let i = 0; i < STEPS.length - 1; i++) {
+    const a = document.getElementById(`farrow-${i}`);
+    if (!a) continue;
+    a.classList.remove('active', 'visited');
+    if (i < currentStep) a.classList.add('visited');
+    if (i === currentStep - 1) a.classList.add('active');
   }
+}
+
+function updatePanel() {
+  const numEl  = document.getElementById('step-num');
+  const nameEl = document.getElementById('step-name');
+  const descEl = document.getElementById('desc-text');
+
+  if (currentStep < 0) {
+    numEl.textContent = 'AWAITING';
+    nameEl.textContent = '— — —';
+    nameEl.style.color = 'var(--text-dim)';
+    nameEl.style.textShadow = 'none';
+    descEl.textContent = 'Click a node or press SPACE to begin.';
+    descEl.classList.remove('has-content');
+    startAnim(-1);
+    return;
+  }
+
+  const s = STEPS[currentStep];
+  numEl.textContent = s.num;
+  nameEl.textContent = s.name;
+  nameEl.style.color = s.color;
+  nameEl.style.textShadow = `0 0 12px ${s.glowColor}`;
+  descEl.textContent = s.desc;
+  descEl.classList.add('has-content');
+  document.getElementById('step-counter').textContent = `STEP ${currentStep + 1} / ${STEPS.length}`;
+  startAnim(currentStep);
+}
+
+function goToStep(n) {
+  currentStep = Math.min(n, STEPS.length - 1);
+  updateFlowStrip();
+  updateProgress();
+  updatePanel();
+  updateButtonStates();
+}
+
+function nextStep() {
+  if (currentStep >= STEPS.length - 1) return;
+  goToStep(currentStep + 1);
+}
+function prevStep() {
+  if (currentStep <= 0) { resetAll(); return; }
+  goToStep(currentStep - 1);
+}
+function updateButtonStates() {
   document.getElementById('btn-prev').disabled = currentStep < 0;
   document.getElementById('btn-next').disabled = currentStep >= STEPS.length - 1;
 }
-function draw() {
-  ctx.clearRect(0, 0, cw, ch);
-  if (currentStep < 0) return;
-  const step = STEPS[currentStep];
-  const pulse = 8 + Math.sin(animT / 12) * 3;
-  const x = cw / 2;
-  const y = ch / 2;
-  const grad = ctx.createRadialGradient(x, y, 0, x, y, 120);
-  grad.addColorStop(0, step.glowColor);
-  grad.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, cw, ch);
-  ctx.beginPath();
-  ctx.arc(x, y, 40 + pulse, 0, Math.PI * 2);
-  ctx.fillStyle = step.glowColor;
-  ctx.fill();
-  ctx.beginPath();
-  ctx.arc(x, y, 26, 0, Math.PI * 2);
-  ctx.fillStyle = step.color;
-  ctx.fill();
-  ctx.font = "700 16px Orbitron, sans-serif";
-  ctx.textAlign = "center";
-  ctx.fillStyle = "#e2e8f0";
-  ctx.fillText(step.num, x, y + 6);
-  ctx.font = "12px 'JetBrains Mono', monospace";
-  ctx.fillStyle = "rgba(226,232,240,0.75)";
-  ctx.fillText(step.name, x, y + 72);
-  animT += 1;
-  raf = requestAnimationFrame(draw);
+function resetAll() {
+  currentStep = -1;
+  updateFlowStrip();
+  updateProgress();
+  updatePanel();
+  updateButtonStates();
+  document.getElementById('step-counter').textContent = 'STEP 0 / 6';
 }
-function goToStep(index) {
-  currentStep = Math.max(-1, Math.min(index, STEPS.length - 1));
-  updateUi();
-  cancelAnimationFrame(raf);
-  animT = 0;
-  draw();
-}
-function nextStep() { if (currentStep < STEPS.length - 1) goToStep(currentStep + 1); }
-function prevStep() { if (currentStep <= 0) goToStep(-1); else goToStep(currentStep - 1); }
-function resetAll() { goToStep(-1); }
-document.getElementById('btn-next').onclick = nextStep;
-document.getElementById('btn-prev').onclick = prevStep;
-document.getElementById('btn-reset').onclick = resetAll;
-document.addEventListener('keydown', (event) => {
-  if (event.key === ' ' || event.key === 'ArrowRight') { event.preventDefault(); nextStep(); }
-  if (event.key === 'ArrowLeft') { event.preventDefault(); prevStep(); }
-  if (event.key === 'r' || event.key === 'R') resetAll();
+
+// ─── Controls ─────────────────────────────────────────────────
+document.getElementById('btn-next').addEventListener('click', nextStep);
+document.getElementById('btn-prev').addEventListener('click', prevStep);
+document.getElementById('btn-reset').addEventListener('click', resetAll);
+
+document.addEventListener('keydown', e => {
+  if (e.key === ' ' || e.key === 'ArrowRight') { e.preventDefault(); nextStep(); }
+  if (e.key === 'ArrowLeft') { e.preventDefault(); prevStep(); }
+  if (e.key === 'r' || e.key === 'R') resetAll();
 });
-window.addEventListener('resize', () => { resizeCanvas(); draw(); });
-buildFlow();
-buildTrack();
+
+// ─── Resize handling ──────────────────────────────────────────
+window.addEventListener('resize', () => {
+  resizeCanvas();
+  if (currentStep >= 0) startAnim(currentStep);
+});
+
+// ─── Init ─────────────────────────────────────────────────────
+buildFlowStrip();
+buildProgressTrack();
 resizeCanvas();
 resetAll();
+
 })();
 </script>
 </body>

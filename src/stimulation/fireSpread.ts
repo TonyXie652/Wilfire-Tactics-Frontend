@@ -37,19 +37,19 @@ const BURNOUT_AGE = 180;
 /**
  * Probability per tick that a burning-out cell loses 1 intensity level.
  */
-const BASE_DECAY_CHANCE = 0.03;
+const BASE_DECAY_CHANCE = 0.025;
 
 /** Minimum fire age before external spread starts. */
 const SPREAD_START_AGE_TICKS = 12;
 
 /** Real map metres for one outward spread step. */
-const FIRE_SPREAD_STEP_METERS = 16;
+const FIRE_SPREAD_STEP_METERS = 50;
 
 /** Randomized jitter so new cells do not form a perfect grid. */
 const FIRE_SPREAD_JITTER_METERS = 2;
 
 /** Minimum spacing between fire cells, in real map metres. */
-const MIN_DISTANCE_THRESHOLD_METERS = 12;
+const MIN_DISTANCE_THRESHOLD_METERS = 40;
 
 const DIRECTIONS = [
   [1, 0], [-1, 0], [0, 1], [0, -1],
@@ -127,7 +127,9 @@ export function stepFireSpread(
       const fireAngleRad = Math.atan2(dir[0], dir[1]);
       const fireAngleDeg = (fireAngleRad * 180) / Math.PI;
 
-      const angleDiff = Math.abs(wind.angleDeg - fireAngleDeg);
+      // Properly handle angle wrapping (e.g. 350° vs 10° = 20° diff, not 340°)
+      let angleDiff = Math.abs(wind.angleDeg - fireAngleDeg) % 360;
+      if (angleDiff > 180) angleDiff = 360 - angleDiff;
       const angleDiffRad = (angleDiff * Math.PI) / 180;
 
       // cosine 对齐度：顺风=+1，侧风=0，逆风=-1

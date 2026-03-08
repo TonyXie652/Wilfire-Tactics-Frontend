@@ -55,8 +55,10 @@ export function MapView({
       center,
       zoom,
       minZoom: 15,
-      maxZoom: 18,
+      maxZoom: 17,
       antialias: true,
+      attributionControl: false,
+      logoPosition: "bottom-left",
     });
 
 
@@ -182,6 +184,10 @@ export function MapView({
           right: ${isSidebarOpen ? "280px" : "0px"} !important;
           top: 80px !important;
           transition: right 0.3s ease;
+        }
+        .mapboxgl-ctrl-logo,
+        .mapboxgl-ctrl-attrib {
+          display: none !important;
         }
       `}</style>
     </>

@@ -138,12 +138,12 @@ export function getGrade(evacuationRate: number): {
     label: string;
     color: string;
 } {
-    if (evacuationRate >= 0.95) return { grade: "S", label: "完美疏散", color: "#ffd700" };
-    if (evacuationRate >= 0.85) return { grade: "A", label: "优秀", color: "#22c55e" };
-    if (evacuationRate >= 0.7) return { grade: "B", label: "良好", color: "#3b82f6" };
-    if (evacuationRate >= 0.5) return { grade: "C", label: "一般", color: "#f59e0b" };
-    if (evacuationRate >= 0.3) return { grade: "D", label: "较差", color: "#ef4444" };
-    return { grade: "F", label: "失败", color: "#991b1b" };
+    if (evacuationRate >= 0.95) return { grade: "S", label: "Perfect Evacuation", color: "#ffd700" };
+    if (evacuationRate >= 0.85) return { grade: "A", label: "Excellent", color: "#22c55e" };
+    if (evacuationRate >= 0.7) return { grade: "B", label: "Good", color: "#3b82f6" };
+    if (evacuationRate >= 0.5) return { grade: "C", label: "Average", color: "#f59e0b" };
+    if (evacuationRate >= 0.3) return { grade: "D", label: "Poor", color: "#ef4444" };
+    return { grade: "F", label: "Failed", color: "#991b1b" };
 }
 
 /**
@@ -152,30 +152,30 @@ export function getGrade(evacuationRate: number): {
 export function formatMetricsSummary(metrics: SimulationMetrics): string {
     const grade = getGrade(metrics.evacuationRate);
     const lines: string[] = [
-        `=== 模拟评估报告 ===`,
+        `=== Simulation Assessment Report ===`,
         ``,
-        `评级: ${grade.grade} (${grade.label})`,
+        `Grade: ${grade.grade} (${grade.label})`,
         ``,
-        `📊 核心指标:`,
-        `  撤离率: ${(metrics.evacuationRate * 100).toFixed(1)}%`,
-        `  死亡率: ${(metrics.casualtyRate * 100).toFixed(1)}%`,
-        `  安全: ${metrics.safeCount} / ${metrics.totalResidents}`,
-        `  死亡: ${metrics.deadCount}`,
+        `📊 Core Metrics:`,
+        `  Evacuation Rate: ${(metrics.evacuationRate * 100).toFixed(1)}%`,
+        `  Casualty Rate: ${(metrics.casualtyRate * 100).toFixed(1)}%`,
+        `  Safe: ${metrics.safeCount} / ${metrics.totalResidents}`,
+        `  Deaths: ${metrics.deadCount}`,
         ``,
-        `⏱ 时间:`,
-        `  总耗时: ${metrics.totalTicks} ticks`,
-        `  平均撤离: ${metrics.avgEvacuationTime} ticks`,
-        `  最快: ${metrics.fastestEvacuationTime} ticks`,
-        `  最慢: ${metrics.slowestEvacuationTime} ticks`,
+        `⏱ Time:`,
+        `  Total Duration: ${metrics.totalTicks} ticks`,
+        `  Avg Evacuation: ${metrics.avgEvacuationTime} ticks`,
+        `  Fastest: ${metrics.fastestEvacuationTime} ticks`,
+        `  Slowest: ${metrics.slowestEvacuationTime} ticks`,
         ``,
-        `🟢 引导员效果:`,
-        `  跟随引导员: ${metrics.followedGuideCount} 人`,
-        `  跟随后安全: ${metrics.followedGuideSafeCount} 人`,
-        `  引导成功率: ${(metrics.guideEffectiveness * 100).toFixed(1)}%`,
+        `🟢 Guide Effectiveness:`,
+        `  Followed Guide: ${metrics.followedGuideCount} residents`,
+        `  Followed & Safe: ${metrics.followedGuideSafeCount} residents`,
+        `  Guide Success Rate: ${(metrics.guideEffectiveness * 100).toFixed(1)}%`,
         ``,
-        `🔥 火势:`,
-        `  最终覆盖: ${metrics.finalFireCoverage} 格`,
-        `  最高强度: ${metrics.peakFireIntensity}`,
+        `🔥 Fire:`,
+        `  Final Coverage: ${metrics.finalFireCoverage} cells`,
+        `  Peak Intensity: ${metrics.peakFireIntensity}`,
     ];
 
     return lines.join("\n");
