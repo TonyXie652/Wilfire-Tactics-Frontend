@@ -40,7 +40,7 @@ let globalAssistantId: string | null = null;
  * How many messages a thread accumulates before we recycle it.
  * Keeps context short and API latency predictable.
  */
-const MAX_THREAD_MESSAGES = 10;
+const MAX_THREAD_MESSAGES = 25;
 
 /** Reset all sessions (call when starting a new simulation). */
 export function resetGuideSessions(): void {
@@ -166,9 +166,9 @@ function checkSafePointFeasibility(
   scenario: Scenario,
   fireCells: FireCell[],
   blockedEdges: Set<string>,
+  graph: ReturnType<typeof buildGraph>,
+  nodeMap: ReturnType<typeof buildNodeMap>,
 ): Record<string, boolean> {
-  const graph = buildGraph(scenario);
-  const nodeMap = buildNodeMap(scenario.nodes);
   const nodes = [...nodeMap.values()];
   const guideNode = findNearestNode(guide.lng, guide.lat, nodes);
   if (!guideNode) return {};
@@ -218,7 +218,9 @@ function buildStateMessage(
       : "No fire detected.";
 
   // Safe point status (fire + roadblock aware)
-  const feasibility = checkSafePointFeasibility(guide, scenario, fireCells, blockedEdges);
+  const _graph = buildGraph(scenario);
+  const _nodeMap = buildNodeMap(scenario.nodes);
+  const feasibility = checkSafePointFeasibility(guide, scenario, fireCells, blockedEdges, _graph, _nodeMap);
   const safePointLines = scenario.safePoints
     .map((sp) => {
       const accessible = feasibility[sp.id] !== false ? "✓ accessible" : "✗ BLOCKED";
