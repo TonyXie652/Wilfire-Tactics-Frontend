@@ -145,6 +145,7 @@ export default function HomePage() {
               </button>
 
               <button
+                onClick={() => window.location.href = "/Overview.html"}
                 onMouseEnter={() => setIsHoverSecondary(true)}
                 onMouseLeave={() => setIsHoverSecondary(false)}
                 style={{

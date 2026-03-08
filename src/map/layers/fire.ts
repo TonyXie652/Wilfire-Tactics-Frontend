@@ -46,15 +46,12 @@ class GlowScatterplotLayer<T = any> extends ScatterplotLayer<T> {
 }
 GlowScatterplotLayer.layerName = 'GlowScatterplotLayer';
 
-// 2. 伪随机位置：增加高度偏移 (Z 轴)，解决闪烁
-function getJitteredPosition(position: [number, number], id: string, amount: number): [number, number, number] {
-  const seed = id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-  const offsetLng = (Math.sin(seed) * amount);
-  const offsetLat = (Math.cos(seed) * amount);
+// 2. 仅做高度差，不偏移经纬度，避免视觉火位与逻辑火位脱节
+function getJitteredPosition(position: [number, number], id: string): [number, number, number] {
   const [lng, lat] = position;
-  // 【关键】：调整 Z 轴偏移方向。负数在 Deck.gl 中代表向上（远离地表，拉近镜头）
+  const seed = id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
   const offsetZ = (2 + (seed % 10) * 10);
-  return [lng + 0.00055 + offsetLng, lat + 0.00022 + offsetLat, offsetZ];
+  return [lng, lat, offsetZ];
 }
 
 export function makeFireLayer(fireCells: FireCell[], opts: Options = {}): Layer[] {
@@ -70,7 +67,7 @@ export function makeFireLayer(fireCells: FireCell[], opts: Options = {}): Layer[
 
     // 所有火圈统一放在同一个微小正高度上，不再使用随机 Z 偏移
     // 这样配合 depthWrite: false + depthTest: false，所有火圈能完美叠加，不会互相遮挡
-    getPosition: (d) => [d.position[0] + 0.00055, d.position[1] + 0.00022, 0.5],
+    getPosition: (d) => [d.position[0], d.position[1], 0.5],
 
     // 单圈模式下，适当增加辐射范围
     getRadius: (d) => cellSize * (0.4 + d.intensity * 0.15) * pulseRatio * 1.5,
@@ -122,7 +119,7 @@ export function makeFireLayer(fireCells: FireCell[], opts: Options = {}): Layer[
 
     // 增加高度偏移 Z
     getPosition: (d) => {
-      const pos = getJitteredPosition(d.position, d.id, 0.0003);
+      const pos = getJitteredPosition(d.position, d.id);
       return [pos[0], pos[1], pos[2] ? pos[2] + 18 : 18];
     },
 

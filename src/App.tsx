@@ -813,30 +813,35 @@ export default function App() {
     ];
   }, [timeMs, fireCells, agents, selectedGuideId, handlePickGuide, blockedEdges]);
 
-  // ─── 提示文字 ───
-  const hintText = (() => {
-    if (!isPaused) return null;
-    if (guideMenu) return "👆 选择移除或追踪当前 Guide";
-    if (trackedGuideId) return `👁 正在追踪 ${trackedGuideId}`;
-    return "👆 先用右侧工具栏添加 Fire、Guide 或 Residents";
-  })();
+  const totalFireIntensity = fireCells.reduce((sum, cell) => sum + cell.intensity, 0);
+  const baseDanger = 0.15;
+  const fireDangerLevel = Math.min(1, baseDanger + (totalFireIntensity / 100) * (1 - baseDanger));
+  const dangerOpacity = (0.3 + ((Math.sin(timeMs / 450) + 1) / 2) * 0.7) * fireDangerLevel;
 
   return (
     <div style={{ height: "100vh", width: "100vw", position: "relative", overflow: "hidden" }}>
+      <div
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          pointerEvents: "none",
+          zIndex: 4,
+          boxShadow: `inset 0 0 250px rgba(255, 0, 0, ${dangerOpacity})`,
+        }}
+      />
       {/* ── 地图层（全屏固定大小，不会受到侧边栏折叠影响！） ── */}
       <div style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", zIndex: 1 }}>
         
 
 
         <StatsPanel
-          tick={tick}
-          fireCellsCount={fireCells.length}
-          totalResidents={stats.total}
           safeCount={stats.safe}
           deadCount={stats.dead}
           movingCount={stats.moving}
           isSimDone={isSimDone}
-          hintText={hintText}
         />
 
         <GuideTrackerPanel

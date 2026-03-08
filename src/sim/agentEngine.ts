@@ -23,6 +23,7 @@ import {
   type Graph,
   type FlowField,
 } from "./pathfinding";
+import { scaleMeters } from "./worldScale";
 export { WORLD_SCALE } from "./worldScale";
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -52,8 +53,13 @@ const PANIC_RADIUS_M = 200;
 /** Metres within which a resident can "see" fire and starts evacuating. */
 const FIRE_VISIBLE_RADIUS_M = 700;
 
-/** Metres from fire that kills an agent (intensity ≥ 2). */
-const FIRE_KILL_RADIUS_M = 20;
+/** Base fraction of a fire cell's rendered footprint treated as lethal. */
+const FIRE_KILL_RADIUS_FACTOR_BY_INTENSITY = {
+  1: 0.2,
+  2: 0.28,
+  3: 0.36,
+  4: 0.44,
+} as const;
 
 /** Metres from a safe point that counts as "arrived". */
 export const SAFE_ARRIVAL_RADIUS_M = 60;
@@ -98,6 +104,11 @@ export function resetEngineCache(): void {
 /** Haversine distance in scaled simulation metres. */
 function scaledDist(lng1: number, lat1: number, lng2: number, lat2: number): number {
   return scaledHaversine(lng1, lat1, lng2, lat2);
+}
+
+function getFireKillRadiusM(cell: FireCell): number {
+  const clampedIntensity = Math.max(1, Math.min(4, Math.round(cell.intensity))) as 1 | 2 | 3 | 4;
+  return scaleMeters(cell.size * FIRE_KILL_RADIUS_FACTOR_BY_INTENSITY[clampedIntensity]);
 }
 
 function getGraph(scenario: Scenario): Graph {
@@ -251,10 +262,8 @@ export function stepAgents(
 
     // ── Fire-kill check ───────────────────────────────────────────────────
     for (const cell of fireCells) {
-      if (
-        cell.intensity >= 2 &&
-        scaledDist(a.lng, a.lat, cell.position[0], cell.position[1]) < FIRE_KILL_RADIUS_M
-      ) {
+      if (cell.intensity < 1) continue;
+      if (scaledDist(a.lng, a.lat, cell.position[0], cell.position[1]) < getFireKillRadiusM(cell)) {
         a.status = "dead";
         return a;
       }
