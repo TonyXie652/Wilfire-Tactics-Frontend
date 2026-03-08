@@ -12,11 +12,11 @@ export type PickedGuide = {
 type Options = {
   selectedAgentId?: string | null;
   onPickAgent?: (pickedGuide: PickedGuide) => void;
-  /** 当前时间戳，用来驱动脉冲动画 */
+  /** ????????????????????? */
   timeMs?: number;
-  /** 地图上绘制的真实米制半径 */
+  /** ?????????????????? */
   guideInfluenceRadiusMeters?: number;
-  /** tick 间线性插值系数 [0,1]，用于平滑渲染，不影响逻辑 */
+  /** tick ???????????[0,1]???????????????????? */
   interpT?: number;
 };
 
@@ -29,7 +29,7 @@ export function makeAgentsLayer(agents: Agent[], opts: Options = {}): Layer[] {
     interpT = 1,
   } = opts;
 
-  // 在 prevLng/prevLat（上一 tick）和 lng/lat（当前 tick）之间插值，实现平滑移动
+  // ??prevLng/prevLat????? tick??? lng/lat?????tick??????????????????
   const lerpPos = (d: Agent): [number, number, number] => {
     if (interpT < 1 && d.prevLng !== undefined && d.prevLat !== undefined) {
       return [
@@ -41,7 +41,7 @@ export function makeAgentsLayer(agents: Agent[], opts: Options = {}): Layer[] {
     return [d.lng, d.lat, 5];
   };
 
-  // ─── 颜色策略 ───
+  // ?????? ?????? ??????
   const colorResident: [number, number, number, number] = [37, 99, 235, 230];
   const colorResidentDead: [number, number, number, number] = [120, 120, 120, 150];
   const colorResidentSafe: [number, number, number, number] = [34, 197, 94, 230];
@@ -50,16 +50,14 @@ export function makeAgentsLayer(agents: Agent[], opts: Options = {}): Layer[] {
   const colorSelected: [number, number, number, number] = [168, 85, 247, 245];
   const colorRoadblock: [number, number, number, number] = [156, 163, 175, 235];
 
-
-  // ─── 引导员影响范围 ───
+  // ?????? ??????????????? ??????
   const guides = agents.filter((a) => a.kind === "guide" && a.status !== "dead");
-  
   const pulseT = (timeMs % 2000) / 2000;
 
   const guideRangeOuter = new ScatterplotLayer<Agent>({
     id: "guide-range-outer",
     data: guides,
-    getPosition: (d: Agent) => { const p = lerpPos(d); return [p[0], p[1], 2]; },
+    getPosition: (d) => { const p = lerpPos(d); return [p[0], p[1], 2]; },
     radiusUnits: "meters",
     getRadius: () => guideInfluenceRadiusMeters,
     radiusMinPixels: 20,
@@ -74,12 +72,12 @@ export function makeAgentsLayer(agents: Agent[], opts: Options = {}): Layer[] {
     updateTriggers: {
       getPosition: [agents.filter((a) => a.kind === "guide").map((a) => `${a.lng},${a.lat}`), interpT],
     },
-  } as any);
+  });
 
   const guideRangePulse = new ScatterplotLayer<Agent>({
     id: "guide-range-pulse",
     data: guides,
-    getPosition: (d: Agent) => { const p = lerpPos(d); return [p[0], p[1], 2]; },
+    getPosition: (d) => { const p = lerpPos(d); return [p[0], p[1], 2]; },
     radiusUnits: "meters",
     getRadius: () => guideInfluenceRadiusMeters * (0.3 + 0.7 * pulseT),
     radiusMinPixels: 8,
@@ -98,9 +96,9 @@ export function makeAgentsLayer(agents: Agent[], opts: Options = {}): Layer[] {
       getLineColor: timeMs,
       getPosition: [agents.filter((a) => a.kind === "guide").map((a) => `${a.lng},${a.lat}`), interpT],
     },
-  } as any);
+  });
 
-  // ─── Agent 点（支持拖拽引导员） ───
+  // ?????? Agent ??????????????? ??????
   const agentDots = new ScatterplotLayer<Agent>({
     id: "agents",
     data: agents,
@@ -144,8 +142,7 @@ export function makeAgentsLayer(agents: Agent[], opts: Options = {}): Layer[] {
       getFillColor: [selectedAgentId, agents.map((a) => a.status)],
       getLineColor: agents.map((a) => a.followingGuideId),
       getRadius: agents.map((a) => a.status),
-      // interpT 每帧都变化，确保每帧都重新插值计算位置
-      getPosition: [agents.map((a) => `${a.lng},${a.lat}`), interpT],
+      // interpT ?????????????????????????????      getPosition: [agents.map((a) => `${a.lng},${a.lat}`), interpT],
     },
 
     onClick: (info: any) => {
