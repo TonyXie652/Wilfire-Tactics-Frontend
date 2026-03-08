@@ -36,7 +36,7 @@ export function GuideActionMenu({
       <div style={{ padding: "14px 16px 10px", borderBottom: "1px solid rgba(148, 163, 184, 0.18)" }}>
         <div style={{ fontSize: 14, fontWeight: 700 }}>Guide {guideId}</div>
         <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 4 }}>
-          选择一个操作
+          Select an action
         </div>
       </div>
 
@@ -53,7 +53,7 @@ export function GuideActionMenu({
             cursor: "pointer",
           }}
         >
-          {isTracked ? "正在追踪" : "追踪日志"}
+          {isTracked ? "Tracking" : "Track Logs"}
         </button>
 
         <button
@@ -68,7 +68,7 @@ export function GuideActionMenu({
             cursor: "pointer",
           }}
         >
-          移除 Guide
+          Remove Guide
         </button>
 
         <button
@@ -82,7 +82,7 @@ export function GuideActionMenu({
             cursor: "pointer",
           }}
         >
-          关闭
+          Close
         </button>
       </div>
     </div>
