@@ -1,5 +1,7 @@
 # Wildfire Tactics
 
+🎥 **[Watch the Demo Video on YouTube](https://www.youtube.com/watch?v=L_ilsO2c7U4)**
+
 Wildfire Tactics is an interactive wildfire evacuation simulation built for exploring how fire spread, road constraints, guide coordination, and resident behavior affect emergency outcomes in a dynamic scenario.
 
 Instead of treating evacuation as a static shortest-path problem, the project models a changing environment:
