@@ -78,7 +78,7 @@ export function GuideTrackerPanel({ guide, decisions, onClose }: Props) {
         }}
       >
         <div>
-          <div style={{ fontSize: 15, fontWeight: 700 }}>追踪 Guide {guide.id}</div>
+          <div style={{ fontSize: 15, fontWeight: 700 }}>Tracking Guide {guide.id}</div>
           <div style={{ fontSize: 12, color: "#93c5fd", marginTop: 4 }}>
             status={guide.status ?? "moving"} target={guide.targetSafePointId ?? "-"}
           </div>
@@ -98,7 +98,7 @@ export function GuideTrackerPanel({ guide, decisions, onClose }: Props) {
       </div>
 
       <div style={{ padding: "12px 16px", fontSize: 12, color: "#cbd5e1" }}>
-        位置: [{guide.lng.toFixed(5)}, {guide.lat.toFixed(5)}]
+        Position: [{guide.lng.toFixed(5)}, {guide.lat.toFixed(5)}]
       </div>
 
       <div style={{ padding: "0 12px 12px", display: "grid", gap: 8 }}>
@@ -112,7 +112,7 @@ export function GuideTrackerPanel({ guide, decisions, onClose }: Props) {
               fontSize: 12,
             }}
           >
-            暂无该 Guide 的 AI 决策日志
+            No AI decision logs for this Guide yet
           </div>
         ) : (
           decisions.slice().reverse().map((entry, index) => (

@@ -31,7 +31,7 @@ export function logDecisions(
             tick,
             guideId: d.guideId,
             targetSafePointId: d.targetSafePointId,
-            reason: d.reason ?? "无理由",
+            reason: d.reason ?? "No reason provided",
             timestamp: now,
         });
     }
@@ -69,12 +69,12 @@ export function clearDecisionLog(): void {
  * 格式化决策日志为文本
  */
 export function formatDecisionLog(): string {
-    if (decisionLog.length === 0) return "暂无 AI 决策记录";
+    if (decisionLog.length === 0) return "No AI decisions recorded yet";
 
     return decisionLog
         .map(
             (d) =>
-                `[Tick ${d.tick}] 引导员 ${d.guideId} → 安全点 ${d.targetSafePointId}\n         理由：${d.reason}`
+                `[Tick ${d.tick}] Guide ${d.guideId} → Safe Point ${d.targetSafePointId}\n         Reason: ${d.reason}`
         )
         .join("\n\n");
 }
