@@ -52,7 +52,7 @@ export default function HomePage() {
           flexDirection: "row",
         }}
       >
-        {/* 左侧文字区域：修改 #4 添加了黑色渐变遮罩，确保文字不被网格线干扰 */}
+        {/* 左侧文字区域：添加径向暗色遮罩，确保文字不被网格线干扰 */}
         <div
           style={{
             flex: 1.15,
@@ -60,8 +60,8 @@ export default function HomePage() {
             alignItems: "center",
             justifyContent: "center",
             padding: "64px 56px 64px 72px",
-            // 从左向右的柔和暗色渐变，分离前后景
-            background: "linear-gradient(90deg, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0.15) 50%, transparent 100%)",
+            // 径向渐变能更好地在文字后方形成暗色光晕遮罩
+            background: "radial-gradient(ellipse at 40% 50%, rgba(10,10,15,0.9) 0%, rgba(10,10,15,0.5) 50%, transparent 80%)",
           }}
         >
           <div style={{ maxWidth: 720 }}>
@@ -108,19 +108,23 @@ export default function HomePage() {
               Tactics
             </h1>
 
-            <p
-              style={{
-                fontSize: "22px",
-                lineHeight: 1.75,
-                color: "rgba(255,255,255,0.82)",
-                marginBottom: "34px",
-                maxWidth: "640px",
-              }}
-            >
-              An interactive wildfire evacuation simulation system for exploring
-              fire spread, road accessibility, responder movement, and safe-point
-              coordination through a clear visual workflow.
-            </p>
+
+
+            {/* 数据指标增强说服力 */}
+            <div style={{ display: "flex", gap: "24px", marginBottom: "40px", opacity: 0.85, flexWrap: "wrap" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#f97316", boxShadow: "0 0 10px #f97316" }}></span>
+                <span style={{ fontSize: "14px", fontWeight: 600, color: "#a1a1aa", letterSpacing: "0.05em" }}>60 FPS RENDER</span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#f97316", boxShadow: "0 0 10px #f97316" }}></span>
+                <span style={{ fontSize: "14px", fontWeight: 600, color: "#a1a1aa", letterSpacing: "0.05em" }}>REAL-TIME AI DECISIONS</span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#f97316", boxShadow: "0 0 10px #f97316" }}></span>
+                <span style={{ fontSize: "14px", fontWeight: 600, color: "#a1a1aa", letterSpacing: "0.05em" }}>10+ DYNAMIC PARAMETERS</span>
+              </div>
+            </div>
 
             <div style={{ display: "flex", gap: "18px", flexWrap: "wrap", alignItems: "center" }}>
               <button
@@ -210,14 +214,14 @@ export default function HomePage() {
                     backdropFilter: "blur(24px)", // 更强的毛玻璃模糊
                     // 精细的边缘高光：模拟光线从左上方打下来
                     borderTop: isCardHovered ? "1px solid rgba(255,255,255,0.25)" : "1px solid rgba(255,255,255,0.12)",
-                    borderLeft: isCardHovered ? "1px solid rgba(255,255,255,0.15)" : "1px solid rgba(255,255,255,0.08)",
+                    borderLeft: "1px solid transparent", // 移除发光的左边框
                     borderBottom: isCardHovered ? "1px solid rgba(255,255,255,0.05)" : "1px solid rgba(255,255,255,0.02)",
                     borderRight: isCardHovered ? "1px solid rgba(255,255,255,0.05)" : "1px solid rgba(255,255,255,0.02)",
                     borderRadius: "22px",
                     padding: "24px",
                     boxShadow: isCardHovered
-                      ? "0 20px 40px rgba(0,0,0,0.3), 0 0 15px rgba(255,255,255,0.05)" // 悬浮时阴影更深，外加微弱光晕
-                      : "0 10px 30px rgba(0,0,0,0.2)",
+                      ? "0 20px 40px rgba(0,0,0,0.3)" // 去除发光模糊
+                      : "none", // 移除默认的阴影（左侧发光柱）
                     transform: isCardHovered ? "translateY(-6px)" : "translateY(0)",
                     // 使用 cubic-bezier 曲线让悬浮动画带有轻微的“弹簧”质感
                     transition: "all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)",
@@ -292,6 +296,22 @@ export default function HomePage() {
             </span>
           ))}
         </div>
+        <span
+          onClick={() => navigate("/citations")}
+          style={{
+            color: "rgba(255,255,255,0.35)",
+            fontSize: "12px",
+            cursor: "pointer",
+            textDecoration: "underline",
+            textUnderlineOffset: "3px",
+            marginTop: "4px",
+            transition: "color 0.2s",
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.color = "rgba(255,255,255,0.7)")}
+          onMouseLeave={(e) => (e.currentTarget.style.color = "rgba(255,255,255,0.35)")}
+        >
+          Citations & Acknowledgements
+        </span>
       </div>
     </motion.div>
   );

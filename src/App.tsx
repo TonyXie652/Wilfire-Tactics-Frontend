@@ -544,6 +544,17 @@ export default function App() {
   const [activeTool, setActiveTool] = useState<ToolType>("none");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
+  // ─── Guide & Roadblock limits ───
+  const MAX_GUIDES_BASE = 5;
+  const MAX_ROADBLOCKS = 3;
+  const [deadGuideCount, setDeadGuideCount] = useState(0);
+  const deadGuideCountRef = useRef(0);
+  deadGuideCountRef.current = deadGuideCount;
+
+  const liveGuideCount = agents.filter((a) => a.kind === "guide" && a.status !== "dead").length;
+  const maxGuidesAllowed = Math.max(0, MAX_GUIDES_BASE - deadGuideCount);
+  const currentRoadblockCount = blockedEdges.size;
+
   // Wind config: randomized on mount
   const [windConfig] = useState<WindConfig>(() => ({
     angleDeg: Math.floor(Math.random() * 360),
@@ -637,6 +648,21 @@ export default function App() {
           );
           agentsRef.current = nextAgents;
 
+          // Track guide deaths — permanently reduces guide cap
+          const prevGuides = agentsWithPrev.filter(
+            (a) => a.kind === "guide" && a.status !== "dead"
+          );
+          const nowDeadGuides = nextAgents.filter(
+            (a) =>
+              a.kind === "guide" &&
+              a.status === "dead" &&
+              prevGuides.some((pg) => pg.id === a.id)
+          );
+          if (nowDeadGuides.length > 0) {
+            deadGuideCountRef.current += nowDeadGuides.length;
+            setDeadGuideCount((prev) => prev + nowDeadGuides.length);
+          }
+
           // 批量更新 React state（React 18 自动批处理，一次 re-render）
           setFireCells(nextFireCells);
           setAgents(nextAgents);
@@ -701,13 +727,22 @@ export default function App() {
           }
           setAgents((prev) => [...prev, ...newAgents]);
         } else if (activeTool === "guide") {
+          // Enforce guide limit
+          const currentLiveGuides = agentsRef.current.filter(
+            (a) => a.kind === "guide" && a.status !== "dead"
+          ).length;
+          if (currentLiveGuides >= Math.max(0, MAX_GUIDES_BASE - deadGuideCountRef.current)) return;
           setAgents((prev) => [...prev, createGuide(`guide-${Date.now()}`, lng, lat)]);
         } else if (activeTool === "roadblock") {
           const edgeId = findNearestEdge(lng, lat, scenario);
           if (edgeId) {
             const next = new Set(blockedEdgesRef.current);
-            if (next.has(edgeId)) next.delete(edgeId);
-            else next.add(edgeId);
+            if (next.has(edgeId)) {
+              next.delete(edgeId); // always allow removal
+            } else {
+              if (next.size >= MAX_ROADBLOCKS) return; // enforce limit
+              next.add(edgeId);
+            }
             blockedEdgesRef.current = next;
             setBlockedEdges(new Set(next));
           }
@@ -1005,9 +1040,11 @@ export default function App() {
         style={{
           width: isSidebarOpen ? "260px" : "0px",
           minWidth: isSidebarOpen ? "260px" : "0px",
-          transition: "width 0.3s ease",
-          background: isSidebarOpen ? "#1a1a1a" : "transparent",
-          borderLeft: isSidebarOpen ? "1px solid #333" : "0px solid transparent",
+          transition: "width 0.3s ease, min-width 0.3s ease, background 0.3s ease, border-left 0.3s ease",
+          background: isSidebarOpen ? "rgba(20, 20, 25, 0.75)" : "transparent",
+          backdropFilter: isSidebarOpen ? "blur(20px)" : "none",
+          WebkitBackdropFilter: isSidebarOpen ? "blur(20px)" : "none",
+          borderLeft: isSidebarOpen ? "1px solid rgba(255, 255, 255, 0.1)" : "0px solid transparent",
           display: "flex",
           flexDirection: "column",
           boxSizing: "border-box" as const,
@@ -1016,6 +1053,7 @@ export default function App() {
           right: 0,
           height: "100%",
           zIndex: 50,
+          overflow: "visible",
         }}
       >
         <button
@@ -1030,8 +1068,9 @@ export default function App() {
             top: "20px",
             right: isSidebarOpen ? "auto" : "0px",
             left: isSidebarOpen ? "20px" : "-35px",
-            background: isSidebarOpen ? "transparent" : "#1a1a1a",
-            border: isSidebarOpen ? "none" : "1px solid #333",
+            background: isSidebarOpen ? "transparent" : "rgba(20, 20, 25, 0.75)",
+            backdropFilter: isSidebarOpen ? "none" : "blur(10px)",
+            border: isSidebarOpen ? "none" : "1px solid rgba(255,255,255,0.1)",
             borderRight: isSidebarOpen ? "none" : "none",
             borderRadius: isSidebarOpen ? "0" : "8px 0 0 8px",
             padding: isSidebarOpen ? "0" : "10px 5px",
@@ -1045,17 +1084,22 @@ export default function App() {
           {isSidebarOpen ? "▶" : "◀"}
         </button>
 
-        {isSidebarOpen && (
-          <div style={{
-            padding: "20px",
-            overflowY: "auto",
-            overflowX: "hidden",
-            display: "flex",
-            flexDirection: "column",
-            height: "100%",
-            width: "260px",
-            boxSizing: "border-box",
-          }}>
+        <div style={{
+          padding: "20px",
+          overflowY: "auto",
+          overflowX: "hidden",
+          display: "flex",
+          flexDirection: "column",
+          height: "100%",
+          width: "260px",
+          boxSizing: "border-box",
+          opacity: isSidebarOpen ? 1 : 0,
+          transform: isSidebarOpen ? "translateX(0)" : "translateX(30px)",
+          transition: isSidebarOpen
+            ? "opacity 0.25s ease 0.1s, transform 0.25s ease 0.1s"
+            : "opacity 0.15s ease, transform 0.15s ease",
+          pointerEvents: isSidebarOpen ? "auto" : "none",
+        }}>
             <h2 style={{ color: "#fff", margin: "0 0 20px 40px", fontSize: "18px", width: "100%" }}>Workspace</h2>
 
             <style>{`
@@ -1071,19 +1115,26 @@ export default function App() {
                 font-weight: 600;
                 color: #fff;
                 border: none;
-                border-radius: 8px;
+                border-radius: 12px;
                 cursor: pointer;
-                transition: all 0.2s cubic-bezier(0.25, 0.8, 0.25, 1);
-                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+                transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+                backdrop-filter: blur(8px);
+                position: relative;
+                overflow: hidden;
+              }
+              .action-btn::before {
+                content: "";
+                position: absolute;
+                top: 0; left: 0; right: 0; bottom: 0;
+                background: linear-gradient(180deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0) 100%);
+                pointer-events: none;
               }
               .action-btn:hover {
-                transform: translateY(-1px);
-                box-shadow: 0 6px 12px rgba(0, 0, 0, 0.3);
-                filter: brightness(1.1);
+                transform: translateY(-2px);
+                filter: brightness(1.15);
               }
               .action-btn:active {
                 transform: translateY(1px);
-                box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
               }
             `}</style>
 
@@ -1092,8 +1143,10 @@ export default function App() {
                 onClick={() => setIsPaused((p) => !p)}
                 className="action-btn"
                 style={{
-                  background: isPaused ? "linear-gradient(135deg, #2e7d32, #1b5e20)" : "linear-gradient(135deg, #c62828, #b71c1c)",
-                  border: isPaused ? "1px solid #4caf50" : "1px solid #e53935",
+                  background: isPaused ? "rgba(46, 125, 50, 0.25)" : "rgba(198, 40, 40, 0.25)",
+                  border: isPaused ? "1px solid rgba(76, 175, 80, 0.5)" : "1px solid rgba(229, 57, 53, 0.5)",
+                  color: isPaused ? "#81c784" : "#e57373",
+                  boxShadow: isPaused ? "0 0 15px rgba(76, 175, 80, 0.2)" : "0 0 15px rgba(229, 57, 53, 0.2)",
                 }}
               >
                 {isPaused ? <Play size={18} /> : <Pause size={18} />}
@@ -1107,9 +1160,12 @@ export default function App() {
                 }}
                 className="action-btn"
                 style={{
-                  background: "linear-gradient(135deg, #c62828, #b71c1c)",
-                  border: "1px solid #e53935",
+                  background: "rgba(198, 40, 40, 0.15)",
+                  border: "1px solid rgba(229, 57, 53, 0.4)",
+                  color: "#e57373",
                 }}
+                onMouseEnter={(e) => (e.currentTarget.style.boxShadow = "0 0 15px rgba(229, 57, 53, 0.3)")}
+                onMouseLeave={(e) => (e.currentTarget.style.boxShadow = "none")}
               >
                 <Square size={18} fill="currentColor" />
                 Stop Sim
@@ -1119,43 +1175,86 @@ export default function App() {
                 onClick={handleReset}
                 className="action-btn"
                 style={{
-                  background: "rgba(66, 66, 66, 0.6)",
-                  backdropFilter: "blur(8px)",
-                  border: "1px solid #555",
+                  background: "rgba(255, 255, 255, 0.05)",
+                  border: "1px solid rgba(255, 255, 255, 0.15)",
+                  color: "#ccc",
                 }}
+                onMouseEnter={(e) => (e.currentTarget.style.boxShadow = "0 0 15px rgba(255, 255, 255, 0.1)")}
+                onMouseLeave={(e) => (e.currentTarget.style.boxShadow = "none")}
               >
                 <RotateCcw size={16} />
                 Reset
               </button>
             </div>
 
-            <Toolbar activeTool={activeTool} onSelectTool={setActiveTool} />
+            {/* Tool selection section */}
+            <div style={{
+              marginTop: "8px",
+              padding: "14px 10px 10px",
+              background: "rgba(255,255,255,0.03)",
+              border: "1px solid rgba(255,255,255,0.08)",
+              borderRadius: "10px",
+            }}>
+              <div style={{
+                fontSize: "10px",
+                fontWeight: 600,
+                letterSpacing: "2px",
+                color: "#666",
+                textTransform: "uppercase" as const,
+                marginBottom: "4px",
+                paddingLeft: "12px",
+              }}>
+                Tools
+              </div>
+              <Toolbar
+                activeTool={activeTool}
+                onSelectTool={setActiveTool}
+                guideLimits={{ current: liveGuideCount, max: maxGuidesAllowed }}
+                roadblockLimits={{ current: currentRoadblockCount, max: MAX_ROADBLOCKS }}
+              />
+            </div>
             
             {/* 放置在底部填补空白的返回按钮 */}
-            <div style={{ marginTop: "auto", paddingTop: "20px", display: "flex", justifyContent: "center" }}>
+            <div style={{ marginTop: "auto", paddingTop: "20px", display: "flex", justifyContent: "center", width: "100%" }}>
               <button
                 onClick={() => navigate("/")}
                 style={{
                   width: "85%",
-                  padding: "12px 16px",
+                  padding: "14px 16px",
                   fontSize: "14px",
-                  background: "rgba(25, 25, 25, 0.8)",
-                  color: "white",
-                  border: "1px solid #444",
-                  borderRadius: "8px",
+                  background: "rgba(255, 255, 255, 0.05)",
+                  color: "rgba(255, 255, 255, 0.7)",
+                  border: "1px solid rgba(255, 255, 255, 0.1)",
+                  borderRadius: "12px",
                   cursor: "pointer",
-                  backdropFilter: "blur(4px)",
-                  transition: "background 0.2s",
+                  backdropFilter: "blur(12px)",
+                  transition: "all 0.3s ease",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "8px",
+                  fontWeight: 500,
                 }}
-                onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(50, 50, 50, 0.9)")}
-                onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(25, 25, 25, 0.8)")}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "rgba(255, 255, 255, 0.1)";
+                  e.currentTarget.style.color = "#fff";
+                  e.currentTarget.style.borderColor = "rgba(255, 255, 255, 0.2)";
+                  e.currentTarget.style.boxShadow = "0 8px 24px rgba(0,0,0,0.3)";
+                  e.currentTarget.style.transform = "translateY(-2px)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "rgba(255, 255, 255, 0.05)";
+                  e.currentTarget.style.color = "rgba(255, 255, 255, 0.7)";
+                  e.currentTarget.style.borderColor = "rgba(255, 255, 255, 0.1)";
+                  e.currentTarget.style.boxShadow = "none";
+                  e.currentTarget.style.transform = "translateY(0)";
+                }}
               >
-                ← Back Home
+                <span style={{ fontSize: "16px" }}>←</span> Back Home
               </button>
             </div>
           </div>
-        )}
-      </div>
+        </div>
 
       {/* 结算屏 (Settlement Overlay) */}
       {showSettlement && (

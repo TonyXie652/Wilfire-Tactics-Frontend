@@ -35,80 +35,114 @@ export function StatsPanel({
         style={{
           display: "flex",
           alignItems: "center",
-          background: "rgba(15, 20, 25, 0.75)",
-          backdropFilter: "blur(12px)",
-          WebkitBackdropFilter: "blur(12px)",
-          borderTop: "1px solid rgba(255, 255, 255, 0.15)",
-          borderBottom: "1px solid rgba(255, 255, 255, 0.15)",
-          boxShadow: "0 6px 16px rgba(0, 0, 0, 0.4)",
-          padding: "8px 32px",
+          background: "rgba(15, 15, 20, 0.65)",
+          backdropFilter: "blur(16px)",
+          WebkitBackdropFilter: "blur(16px)",
+          border: "1px solid rgba(255, 255, 255, 0.08)",
+          borderRadius: "100px", // 胶囊形状
+          boxShadow: "0 8px 32px rgba(0, 0, 0, 0.5), inset 0 2px 4px rgba(255,255,255,0.05)",
+          padding: "10px 32px",
           gap: "28px",
           pointerEvents: "auto",
-          maskImage: "linear-gradient(to right, transparent 0%, black 15%, black 85%, transparent 100%)",
-          WebkitMaskImage: "linear-gradient(to right, transparent 0%, black 15%, black 85%, transparent 100%)",
         }}
       >
-        <div style={{ width: "2px", height: "20px", background: "rgba(255, 255, 255, 0.2)", borderRadius: "2px" }} />
-
+        {/* SAFE Block */}
         <div
           onMouseEnter={() => setHoveredBlock("safe")}
           onMouseLeave={() => setHoveredBlock(null)}
           style={{
             display: "flex",
             alignItems: "center",
-            gap: "12px",
-            filter: hoveredBlock === "safe" ? "drop-shadow(0 0 8px rgba(16, 185, 129, 0.6))" : "none",
-            transition: "all 0.2s ease-out",
+            gap: "14px",
+            filter: hoveredBlock === "safe" ? "drop-shadow(0 0 12px rgba(16, 185, 129, 0.6))" : "drop-shadow(0 0 4px rgba(16, 185, 129, 0.1))",
+            transition: "all 0.3s ease-out",
             cursor: "default",
           }}
         >
-          <ShieldCheck size={26} color={hoveredBlock === "safe" ? "#34d399" : "#10b981"} />
-          <span style={{ fontSize: "28px", fontWeight: 900, color: "#fff", fontFamily: "'Orbitron', sans-serif", letterSpacing: "2px", lineHeight: 1 }}>
-            {safeCount}
-          </span>
+          <div style={{
+            background: "rgba(16, 185, 129, 0.15)",
+            padding: "8px",
+            borderRadius: "50%",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}>
+            <ShieldCheck size={20} color={hoveredBlock === "safe" ? "#6ee7b7" : "#34d399"} />
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", justifyContent: "center" }}>
+            <span style={{ fontSize: "24px", fontWeight: 800, color: "#fff", fontFamily: "'Orbitron', sans-serif", letterSpacing: "1px", lineHeight: 1 }}>
+              {safeCount}
+            </span>
+            <span style={{ fontSize: "9px", fontWeight: 700, color: "#6ee7b7", letterSpacing: "2px", marginTop: "2px" }}>SAFE</span>
+          </div>
         </div>
 
-        <div style={{ width: "2px", height: "20px", background: "rgba(255, 255, 255, 0.2)", borderRadius: "2px" }} />
+        <div style={{ width: "1px", height: "30px", background: "rgba(255, 255, 255, 0.1)" }} />
 
+        {/* DEAD Block */}
         <div
           onMouseEnter={() => setHoveredBlock("dead")}
           onMouseLeave={() => setHoveredBlock(null)}
           style={{
             display: "flex",
             alignItems: "center",
-            gap: "12px",
-            filter: hoveredBlock === "dead" ? "drop-shadow(0 0 8px rgba(239, 68, 68, 0.6))" : "none",
-            transition: "all 0.2s ease-out",
+            gap: "14px",
+            filter: hoveredBlock === "dead" ? "drop-shadow(0 0 12px rgba(239, 68, 68, 0.6))" : "drop-shadow(0 0 4px rgba(239, 68, 68, 0.1))",
+            transition: "all 0.3s ease-out",
             cursor: "default",
           }}
         >
-          <Skull size={26} color={hoveredBlock === "dead" ? "#f87171" : "#ef4444"} />
-          <span style={{ fontSize: "28px", fontWeight: 900, color: "#fff", fontFamily: "'Orbitron', sans-serif", letterSpacing: "2px", lineHeight: 1 }}>
-            {deadCount}
-          </span>
+          <div style={{
+            background: "rgba(239, 68, 68, 0.15)",
+            padding: "8px",
+            borderRadius: "50%",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}>
+            <Skull size={20} color={hoveredBlock === "dead" ? "#fca5a5" : "#f87171"} />
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", justifyContent: "center" }}>
+            <span style={{ fontSize: "24px", fontWeight: 800, color: "#fff", fontFamily: "'Orbitron', sans-serif", letterSpacing: "1px", lineHeight: 1 }}>
+              {deadCount}
+            </span>
+            <span style={{ fontSize: "9px", fontWeight: 700, color: "#fca5a5", letterSpacing: "2px", marginTop: "2px" }}>DEAD</span>
+          </div>
         </div>
 
-        <div style={{ width: "2px", height: "20px", background: "rgba(255, 255, 255, 0.2)", borderRadius: "2px" }} />
+        <div style={{ width: "1px", height: "30px", background: "rgba(255, 255, 255, 0.1)" }} />
 
+        {/* MOVING Block */}
         <div
           onMouseEnter={() => setHoveredBlock("moving")}
           onMouseLeave={() => setHoveredBlock(null)}
           style={{
             display: "flex",
             alignItems: "center",
-            gap: "12px",
-            filter: hoveredBlock === "moving" ? "drop-shadow(0 0 8px rgba(59, 130, 246, 0.6))" : "none",
-            transition: "all 0.2s ease-out",
+            gap: "14px",
+            filter: hoveredBlock === "moving" ? "drop-shadow(0 0 12px rgba(59, 130, 246, 0.6))" : "drop-shadow(0 0 4px rgba(59, 130, 246, 0.1))",
+            transition: "all 0.3s ease-out",
             cursor: "default",
           }}
         >
-          <Activity size={26} color={hoveredBlock === "moving" ? "#60a5fa" : "#3b82f6"} />
-          <span style={{ fontSize: "28px", fontWeight: 900, color: "#fff", fontFamily: "'Orbitron', sans-serif", letterSpacing: "2px", lineHeight: 1 }}>
-            {movingCount}
-          </span>
+          <div style={{
+            background: "rgba(59, 130, 246, 0.15)",
+            padding: "8px",
+            borderRadius: "50%",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}>
+            <Activity size={20} color={hoveredBlock === "moving" ? "#93c5fd" : "#60a5fa"} />
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", justifyContent: "center" }}>
+            <span style={{ fontSize: "24px", fontWeight: 800, color: "#fff", fontFamily: "'Orbitron', sans-serif", letterSpacing: "1px", lineHeight: 1 }}>
+              {movingCount}
+            </span>
+            <span style={{ fontSize: "9px", fontWeight: 700, color: "#93c5fd", letterSpacing: "2px", marginTop: "2px" }}>MOVING</span>
+          </div>
         </div>
 
-        <div style={{ width: "2px", height: "20px", background: "rgba(255, 255, 255, 0.2)", borderRadius: "2px" }} />
       </div>
 
       {isSimDone && (
