@@ -435,6 +435,7 @@ const scenario: Scenario = {
   safePoints: [
     { id: "s1", lng: -114.38294042567836, lat: 62.45357940231611 },
     { id: "s2", lng: -114.3555019127056, lat: 62.449247135507136 },
+    { id: "s3", lng: -114.35551997538118, lat: 62.46092298952766 },
   ],
 };
 
@@ -445,7 +446,7 @@ const initialAgents: Agent[] = [];
 const initialFire: FireCell[] = [];
 
 const SIM_TICK_INTERVAL_MS = 250;
-const AI_DECISION_INTERVAL = 8;
+const AI_DECISION_INTERVAL = 4;
 const GUIDE_INFLUENCE_RADIUS_DISPLAY_M = logicMetersToMapMeters(GUIDE_INFLUENCE_RADIUS_M);
 const SAFE_ARRIVAL_RADIUS_DISPLAY_M = logicMetersToMapMeters(SAFE_ARRIVAL_RADIUS_M);
 const SAFE_POINT_RING_EXTRA_DISPLAY_M = SAFE_ARRIVAL_RADIUS_DISPLAY_M * 3;

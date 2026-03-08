@@ -39,13 +39,13 @@ export { WORLD_SCALE } from "./worldScale";
  * meaningful as "virtual metres" in the scaled world.
  */
 /** Metres within which a guide can influence nearby residents. */
-export const GUIDE_INFLUENCE_RADIUS_M = 150;
+export const GUIDE_INFLUENCE_RADIUS_M = 250;
 
 /** Base probability a resident decides to follow a nearby guide (0–1). */
-const FOLLOW_BASE_CHANCE = 0.6;
+const FOLLOW_BASE_CHANCE = 0.95;
 
 /** Follow probability when fire is within PANIC_RADIUS_M (stress override). */
-const FOLLOW_STRESS_CHANCE = 0.92;
+const FOLLOW_STRESS_CHANCE = 0.98;
 
 /** Metres from fire at which residents start to panic (speed boost + refollow). */
 const PANIC_RADIUS_M = 200;
@@ -65,7 +65,7 @@ const FIRE_KILL_RADIUS_FACTOR_BY_INTENSITY = {
 export const SAFE_ARRIVAL_RADIUS_M = 60;
 
 /** Ticks between flow-field recomputes. */
-const REPATH_INTERVAL = 8;
+const REPATH_INTERVAL = 4;
 
 /** Max trail history entries per agent. */
 const MAX_PATH_HISTORY = 200;
@@ -159,7 +159,7 @@ export function createResident(
   id: string,
   lng: number,
   lat: number,
-  reactionDelay = 4,
+  reactionDelay = 2,
   spawnTick = 0,
 ): Agent {
   return {
@@ -291,8 +291,8 @@ export function stepAgents(
       }
       if (nearFire) {
         a.panickedAt = tick;
-        // Drop current guide assignment — stress makes people act independently
-        a.followingGuideId = undefined;
+        // Panic boosts speed but does NOT clear guide assignment —
+        // residents still follow a nearby guide even under stress.
       }
     }
 
@@ -337,16 +337,21 @@ function updateGuide(
   tick: number,
 ): Agent {
   const decision = guideDecisionMap.get(guide.id);
+  // Preserve existing target: only AI decisions or the very first fallback set it.
+  // Recomputing fallback every tick from the current node causes the guide to
+  // oscillate between safe points as it crosses the midpoint on the road network.
   const targetSpId =
     decision?.targetSafePointId ??
-    getFallbackSafePointId(guide, scenario);
+    guide.targetSafePointId ??
+    getFallbackSafePointId(guide, scenario, fireCells);
 
   if (!targetSpId) return guide;
 
   guide.targetSafePointId = targetSpId;
 
   const field = getFlowField(targetSpId, scenario, fireCells, blockedEdges, tick);
-  moveViaFlowField(guide, field, getNodeMap(scenario), guide.speed ?? DEFAULT_GUIDE_SPEED);
+  const guideSp = scenario.safePoints.find((s) => s.id === targetSpId);
+  moveViaFlowField(guide, field, getNodeMap(scenario), guide.speed ?? DEFAULT_GUIDE_SPEED, guideSp);
 
   return guide;
 }
@@ -392,16 +397,21 @@ function updateResident(
         resident.followingGuideId = nearbyGuide.id;
       }
     } else {
-      // Re-evaluate only if the guide changed or stress level spiked
-      if (
-        resident.followingGuideId !== nearbyGuide.id &&
-        Math.random() < followChance
-      ) {
-        resident.followingGuideId = nearbyGuide.id;
+      // Only switch to a different guide if it is meaningfully closer (stickiness).
+      if (resident.followingGuideId !== nearbyGuide.id) {
+        const currentGuide = liveGuides.find((g) => g.id === resident.followingGuideId);
+        const curDist = currentGuide
+          ? scaledDist(resident.lng, resident.lat, currentGuide.lng, currentGuide.lat)
+          : Infinity;
+        const newDist = scaledDist(resident.lng, resident.lat, nearbyGuide.lng, nearbyGuide.lat);
+        // Switch only if new guide is 30%+ closer and roll passes.
+        if (newDist < curDist * 0.7 && Math.random() < followChance) {
+          resident.followingGuideId = nearbyGuide.id;
+        }
       }
     }
-  } else if (!nearbyGuide || isPanicking) {
-    // Guide out of range or resident is panicking → act independently
+  } else if (!nearbyGuide) {
+    // Guide out of range → act independently
     resident.followingGuideId = undefined;
   }
 
@@ -409,12 +419,19 @@ function updateResident(
   let targetSpId = resident.targetSafePointId;
 
   if (resident.followingGuideId) {
-    const decision = guideDecisionMap.get(resident.followingGuideId);
-    if (decision) targetSpId = decision.targetSafePointId;
+    // Use the guide's own current target directly (no need to wait for AI decision).
+    const followedGuide = liveGuides.find((g) => g.id === resident.followingGuideId);
+    if (followedGuide?.targetSafePointId) {
+      targetSpId = followedGuide.targetSafePointId;
+    } else {
+      // Fallback: check AI decision map if guide hasn't set a target yet.
+      const decision = guideDecisionMap.get(resident.followingGuideId);
+      if (decision) targetSpId = decision.targetSafePointId;
+    }
   }
 
   if (!targetSpId) {
-    targetSpId = getFallbackSafePointId(resident, scenario) ?? undefined;
+    targetSpId = getFallbackSafePointId(resident, scenario, fireCells) ?? undefined;
   }
 
   if (!targetSpId) return resident; // no reachable safe point known yet
@@ -428,7 +445,8 @@ function updateResident(
     blockedEdges,
     tick,
   );
-  moveViaFlowField(resident, field, getNodeMap(scenario), effectiveSpeed);
+  const residentSp = scenario.safePoints.find((s) => s.id === targetSpId);
+  moveViaFlowField(resident, field, getNodeMap(scenario), effectiveSpeed, residentSp);
 
   return resident;
 }
@@ -440,18 +458,37 @@ function updateResident(
 /**
  * Move agent one step along the flow field toward the goal.
  * Also updates the short lookahead path[] for visualisation.
+ *
+ * @param finalDest  Actual safe-point coordinates. When the agent reaches the
+ *                   flow-field goal node (no next hop), it walks directly toward
+ *                   finalDest so it can cross the gap between the road node and
+ *                   the safe-point marker and trigger the arrival check.
  */
 function moveViaFlowField(
   agent: Agent,
   field: FlowField,
   nodeMap: Map<string, import("../app/types").Node>,
   speed: number,
+  finalDest?: { lng: number; lat: number },
 ): void {
   const curNodeId = agent.currentNodeId;
   if (!curNodeId) return;
 
   const nextNodeId = field.get(curNodeId);
-  if (!nextNodeId) return; // this node has no route (isolated or goal itself)
+  if (!nextNodeId) {
+    // At the flow-field goal node. Walk directly toward the safe point so the
+    // arrival check (SAFE_ARRIVAL_RADIUS_M) can fire even if the road node is
+    // slightly offset from the safe-point marker.
+    if (finalDest) {
+      const distM = scaledDist(agent.lng, agent.lat, finalDest.lng, finalDest.lat);
+      if (distM > 0) {
+        const ratio = Math.min(speed / distM, 1);
+        agent.lng += (finalDest.lng - agent.lng) * ratio;
+        agent.lat += (finalDest.lat - agent.lat) * ratio;
+      }
+    }
+    return;
+  }
 
   const nextNode = nodeMap.get(nextNodeId);
   if (!nextNode) return;
@@ -513,21 +550,52 @@ function isFireWithinRadius(
 }
 
 /**
- * Fallback: find the nearest safe point by road-network distance from the
- * agent's current node.  Returns null if agent is not yet on the network.
+ * Fallback: choose the safest reachable safe point.
+ * When fire is present, prefer safe points that are farther from the fire
+ * centroid (weighted by intensity) rather than just picking the nearest by
+ * air distance — which can direct agents straight into a fire zone.
  */
 function getFallbackSafePointId(
   agent: Agent,
   scenario: Scenario,
+  fireCells: FireCell[],
 ): string | null {
   if (!agent.currentNodeId) return null;
   const nodeMap = getNodeMap(scenario);
-  const sp = findNearestSafePoint(
-    agent.currentNodeId,
-    scenario.safePoints,
-    nodeMap,
-  );
-  return sp?.id ?? null;
+  const node = nodeMap.get(agent.currentNodeId);
+  if (!node) return null;
+
+  if (fireCells.length === 0) {
+    // No fire: just pick nearest safe point by air distance.
+    return findNearestSafePoint(agent.currentNodeId, scenario.safePoints, nodeMap)?.id ?? null;
+  }
+
+  // Compute intensity-weighted fire centroid.
+  let wLng = 0, wLat = 0, totalW = 0;
+  for (const cell of fireCells) {
+    const w = Math.max(cell.intensity, 0.01);
+    wLng += cell.position[0] * w;
+    wLat += cell.position[1] * w;
+    totalW += w;
+  }
+  wLng /= totalW;
+  wLat /= totalW;
+
+  // Score each safe point: reward distance-from-fire, penalise distance-from-agent.
+  // Higher score = better choice.
+  let bestSp: import("../app/types").SafePoint | null = null;
+  let bestScore = -Infinity;
+  for (const sp of scenario.safePoints) {
+    const distToAgent = scaledHaversine(node.lng, node.lat, sp.lng, sp.lat);
+    const distToFire  = scaledHaversine(sp.lng, sp.lat, wLng, wLat);
+    // Weight: distance-from-fire counts twice as much as travel distance.
+    const score = distToFire * 2 - distToAgent;
+    if (score > bestScore) {
+      bestScore = score;
+      bestSp = sp;
+    }
+  }
+  return bestSp?.id ?? null;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────

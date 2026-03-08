@@ -65,7 +65,7 @@ const GUIDE_TOOLS = [
         properties: {
           safe_point_id: {
             type: "string",
-            description: "ID of the target safe point, e.g. 's1', 's2'",
+            description: "ID of the target safe point, e.g. 's1', 's2', 's3'",
           },
           reason: {
             type: "string",
