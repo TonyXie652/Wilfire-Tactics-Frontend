@@ -72,7 +72,7 @@ const GUIDE_TOOLS = [
             description: "Brief justification for this choice",
           },
         },
-        required: ["safe_point_id"],
+        required: ["safe_point_id", "reason"],
       },
     },
   },
@@ -316,6 +316,17 @@ async function getGuideDecision(
     return null;
   }
 
+  // Pre-compute reachability so we can validate (and override) the AI's choice.
+  const _graph = buildGraph(scenario);
+  const _nodeMap = buildNodeMap(scenario.nodes);
+  const feasibility = checkSafePointFeasibility(guide, scenario, fireCells, blockedEdges, _graph, _nodeMap);
+
+  const distSq = (sp: { lng: number; lat: number }) => {
+    const dx = (sp.lng - guide.lng) * Math.cos((guide.lat * Math.PI) / 180);
+    const dy = sp.lat - guide.lat;
+    return dx * dx + dy * dy;
+  };
+
   for (const tc of response.tool_calls) {
     if (tc.function.name !== "direct_residents_to_safe_point") continue;
 
@@ -324,17 +335,22 @@ async function getGuideDecision(
       JSON.parse(tc.function.arguments ?? "{}") as Record<string, string>;
 
     const rawSpId = args["safe_point_id"];
+    const aiChosen = scenario.safePoints.find((sp) => sp.id === rawSpId);
+    const isReachable = aiChosen && feasibility[aiChosen.id] !== false;
 
-    // Validate: ensure the returned ID actually exists.
-    // Fallback: if AI returns unknown ID, pick the nearest safe point by air distance.
-    const distSq = (sp: { lng: number; lat: number }) => {
-      const dx = (sp.lng - guide.lng) * Math.cos((guide.lat * Math.PI) / 180);
-      const dy = sp.lat - guide.lat;
-      return dx * dx + dy * dy;
-    };
-    const nearestFallback = [...scenario.safePoints].sort((a, b) => distSq(a) - distSq(b))[0]
-      ?? scenario.safePoints[0];
-    const validSp = scenario.safePoints.find((sp) => sp.id === rawSpId) ?? nearestFallback;
+    let validSp: typeof aiChosen;
+    if (isReachable) {
+      validSp = aiChosen;
+    } else {
+      // AI chose an unknown or road-blocked safe point.
+      // Override with nearest reachable, and recycle the thread so the AI
+      // gets fresh context without accumulated "s1 is fine" history bias.
+      const reachable = scenario.safePoints.filter((sp) => feasibility[sp.id] !== false);
+      const candidates = reachable.length > 0 ? reachable : [...scenario.safePoints];
+      validSp = candidates.sort((a, b) => distSq(a) - distSq(b))[0];
+      session.messageCount = MAX_THREAD_MESSAGES; // force fresh thread next tick
+      console.warn(`[GuideAI] ${guide.id}: AI chose blocked/unknown "${rawSpId}", overriding → ${validSp?.id}`);
+    }
 
     if (!validSp) return null;
 
@@ -348,19 +364,27 @@ async function getGuideDecision(
       `[GuideAI] ${guide.id} → ${decision.targetSafePointId}: ${decision.reason ?? "(no reason)"}`,
     );
 
-    // Submit tool result so the thread stays in a valid state
-    await apiPost(`/threads/${session.threadId}/tool-outputs`, {
-      run_id: response.run_id,
-      tool_outputs: [
-        {
-          tool_call_id: tc.id,
-          output: JSON.stringify({
-            success: true,
-            message: `Residents now routing to ${decision.targetSafePointId}`,
-          }),
-        },
-      ],
-    });
+    // Only submit tool-outputs if Backboard provided a run_id.
+    // Without a run_id the endpoint returns 404 — Backboard advances the thread automatically.
+    if (response.run_id) {
+      try {
+        await apiPost(`/threads/${session.threadId}/tool-outputs`, {
+          run_id: response.run_id,
+          tool_outputs: [
+            {
+              tool_call_id: tc.id,
+              output: JSON.stringify({
+                success: true,
+                message: `Residents now routing to ${decision.targetSafePointId}`,
+              }),
+            },
+          ],
+        });
+      } catch (toolErr) {
+        console.warn(`[GuideAI] ${guide.id}: tool-output failed, recycling thread`, toolErr);
+        session.messageCount = MAX_THREAD_MESSAGES; // force new thread on next tick
+      }
+    }
 
     return decision;
   }
@@ -394,15 +418,20 @@ export async function getGuideDecisions(
       getGuideDecision(guide, agents, scenario, fireCells, tick, blockedEdges).catch(
         (err: unknown) => {
           console.error(`[GuideAI] ${guide.id} error:`, err);
-          // Graceful fallback: route to nearest safe point
+          // Graceful fallback: route to nearest REACHABLE safe point (respects road blockages)
+          const _graph = buildGraph(scenario);
+          const _nodeMap = buildNodeMap(scenario.nodes);
+          const feasibility = checkSafePointFeasibility(guide, scenario, fireCells, blockedEdges, _graph, _nodeMap);
           const distSq = (sp: { lng: number; lat: number }) => {
             const dx = (sp.lng - guide.lng) * Math.cos((guide.lat * Math.PI) / 180);
             const dy = sp.lat - guide.lat;
             return dx * dx + dy * dy;
           };
-          const fallback = [...scenario.safePoints].sort((a, b) => distSq(a) - distSq(b))[0];
+          const reachable = scenario.safePoints.filter((sp) => feasibility[sp.id] !== false);
+          const candidates = reachable.length > 0 ? reachable : [...scenario.safePoints];
+          const fallback = candidates.sort((a, b) => distSq(a) - distSq(b))[0];
           return fallback
-            ? ({ guideId: guide.id, targetSafePointId: fallback.id, reason: "AI unavailable — nearest fallback" } satisfies GuideDecision)
+            ? ({ guideId: guide.id, targetSafePointId: fallback.id, reason: "AI unavailable — nearest reachable fallback" } satisfies GuideDecision)
             : null;
         },
       ),

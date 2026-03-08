@@ -340,16 +340,26 @@ function updateGuide(
   // Preserve existing target: only AI decisions or the very first fallback set it.
   // Recomputing fallback every tick from the current node causes the guide to
   // oscillate between safe points as it crosses the midpoint on the road network.
-  const targetSpId =
+  let targetSpId =
     decision?.targetSafePointId ??
     guide.targetSafePointId ??
     getFallbackSafePointId(guide, scenario, fireCells, blockedEdges, tick);
 
   if (!targetSpId) return guide;
 
+  // If the chosen target's route is blocked (empty flow field), discard the
+  // stale target and recompute — this handles both AI decisions and sticky
+  // guide.targetSafePointId pointing at a newly-blocked safe point.
+  let field = getFlowField(targetSpId, scenario, fireCells, blockedEdges, tick);
+  if (field.size === 0) {
+    guide.targetSafePointId = undefined;
+    targetSpId = getFallbackSafePointId(guide, scenario, fireCells, blockedEdges, tick);
+    if (!targetSpId) return guide;
+    field = getFlowField(targetSpId, scenario, fireCells, blockedEdges, tick);
+  }
+
   guide.targetSafePointId = targetSpId;
 
-  const field = getFlowField(targetSpId, scenario, fireCells, blockedEdges, tick);
   const guideSp = scenario.safePoints.find((s) => s.id === targetSpId);
   moveViaFlowField(guide, field, getNodeMap(scenario), guide.speed ?? DEFAULT_GUIDE_SPEED, guideSp);
 
@@ -574,7 +584,7 @@ function getFallbackSafePointId(
     // No fire: pick nearest reachable safe point by air distance.
     const reachable = scenario.safePoints.filter((sp) => {
       const f = getFlowField(sp.id, scenario, fireCells, blockedEdges, tick);
-      return f.size > 0 && (f.has(agent.currentNodeId!) || true);
+      return f.size > 0 && f.has(agent.currentNodeId!);
     });
     const candidates = reachable.length > 0 ? reachable : scenario.safePoints;
     return findNearestSafePoint(agent.currentNodeId, candidates, nodeMap)?.id ?? null;
