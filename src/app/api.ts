@@ -1,6 +1,8 @@
 // src/app/api.ts
-// Backboard API 配置
+// Backboard API 通过本地 Vite/preview 代理转发，避免浏览器直接跨域并暴露 key。
+const isLocalHost =
+  typeof window !== "undefined" &&
+  (window.location.hostname === "127.0.0.1" || window.location.hostname === "localhost");
 
-// 从环境变量读取（在 .env.local 中设置）
-export const BACKBOARD_API_KEY = (import.meta.env.VITE_BACKBOARD_API_KEY as string) ?? "";
-export const BACKBOARD_BASE_URL = (import.meta.env.VITE_BACKBOARD_BASE_URL as string) ?? "https://app.backboard.io/api";
+export const BACKBOARD_ENABLED = import.meta.env.DEV || isLocalHost;
+export const BACKBOARD_BASE_URL = "/api/backboard";

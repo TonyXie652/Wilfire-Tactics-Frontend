@@ -10,7 +10,7 @@
 //  • All API calls are typed; error paths log clearly and fall back gracefully.
 
 import type { Agent, Scenario, FireCell, GuideDecision } from "../app/types";
-import { BACKBOARD_API_KEY, BACKBOARD_BASE_URL } from "../app/api";
+import { BACKBOARD_BASE_URL, BACKBOARD_ENABLED } from "../app/api";
 import {
   buildGraph,
   buildNodeMap,
@@ -101,7 +101,6 @@ async function apiPost<T = unknown>(path: string, body: unknown): Promise<T> {
   const res = await fetch(`${BACKBOARD_BASE_URL}${path}`, {
     method: "POST",
     headers: {
-      "X-API-Key": BACKBOARD_API_KEY,
       "Content-Type": "application/json",
     },
     body: JSON.stringify(body),
@@ -363,7 +362,7 @@ async function getGuideDecision(
 
 /**
  * Fetch AI decisions for all live guides in parallel.
- * If BACKBOARD_API_KEY is missing, returns [] (graceful degradation).
+ * If the local Backboard proxy is unavailable, returns [] (graceful degradation).
  */
 export async function getGuideDecisions(
   agents: Agent[],
@@ -372,7 +371,7 @@ export async function getGuideDecisions(
   tick: number,
   blockedEdges: Set<string> = new Set(),
 ): Promise<GuideDecision[]> {
-  if (!BACKBOARD_API_KEY) return [];
+  if (!BACKBOARD_ENABLED) return [];
 
   const guides = agents.filter(
     (a) => a.kind === "guide" && a.status !== "dead" && a.status !== "safe",

@@ -4,7 +4,7 @@
 import type { SimulationMetrics, SimulationReport } from "./evaluation";
 import { formatMetricsSummary, getGrade } from "./evaluation";
 import { formatDecisionLog, getDecisionLog } from "./decisionLog";
-import { BACKBOARD_API_KEY, BACKBOARD_BASE_URL } from "../app/api";
+import { BACKBOARD_BASE_URL, BACKBOARD_ENABLED } from "../app/api";
 
 /* ──────────── API 调用 ──────────── */
 
@@ -12,7 +12,6 @@ async function apiPost(path: string, body: unknown): Promise<unknown> {
     const res = await fetch(`${BACKBOARD_BASE_URL}${path}`, {
         method: "POST",
         headers: {
-            "X-API-Key": BACKBOARD_API_KEY,
             "Content-Type": "application/json",
         },
         body: JSON.stringify(body),
@@ -86,9 +85,9 @@ ${decisionHistory}
 export async function generateReport(
     metrics: SimulationMetrics
 ): Promise<SimulationReport> {
-    // 没有 API key → 返回纯数据报告
-    if (!BACKBOARD_API_KEY) {
-        console.log("[Report] 无 Backboard API key，生成纯数据报告");
+    // 没有本地代理 → 返回纯数据报告
+    if (!BACKBOARD_ENABLED) {
+        console.log("[Report] 本地 Backboard 代理不可用，生成纯数据报告");
         return {
             metrics,
             aiAnalysis: null,
