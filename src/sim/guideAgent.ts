@@ -222,7 +222,11 @@ function buildStateMessage(
   const safePointLines = scenario.safePoints
     .map((sp) => {
       const accessible = feasibility[sp.id] !== false ? "✓ accessible" : "✗ BLOCKED";
-      return `  - ${sp.id}: [${sp.lng.toFixed(4)}, ${sp.lat.toFixed(4)}]  ${accessible}`;
+      // Approximate guide→safepoint distance in metres (good enough for AI context)
+      const dLng = (sp.lng - guide.lng) * Math.cos((guide.lat * Math.PI) / 180);
+      const dLat = sp.lat - guide.lat;
+      const distM = Math.round(Math.sqrt(dLng * dLng + dLat * dLat) * 111000);
+      return `  - ${sp.id}: dist≈${distM}m  [${sp.lng.toFixed(4)}, ${sp.lat.toFixed(4)}]  ${accessible}`;
     })
     .join("\n");
 
@@ -319,10 +323,16 @@ async function getGuideDecision(
 
     const rawSpId = args["safe_point_id"];
 
-    // Validate: ensure the returned ID actually exists
-    const validSp =
-      scenario.safePoints.find((sp) => sp.id === rawSpId) ??
-      scenario.safePoints[0]; // fallback to first safe point
+    // Validate: ensure the returned ID actually exists.
+    // Fallback: if AI returns unknown ID, pick the nearest safe point by air distance.
+    const distSq = (sp: { lng: number; lat: number }) => {
+      const dx = (sp.lng - guide.lng) * Math.cos((guide.lat * Math.PI) / 180);
+      const dy = sp.lat - guide.lat;
+      return dx * dx + dy * dy;
+    };
+    const nearestFallback = [...scenario.safePoints].sort((a, b) => distSq(a) - distSq(b))[0]
+      ?? scenario.safePoints[0];
+    const validSp = scenario.safePoints.find((sp) => sp.id === rawSpId) ?? nearestFallback;
 
     if (!validSp) return null;
 
@@ -382,10 +392,15 @@ export async function getGuideDecisions(
       getGuideDecision(guide, agents, scenario, fireCells, tick, blockedEdges).catch(
         (err: unknown) => {
           console.error(`[GuideAI] ${guide.id} error:`, err);
-          // Graceful fallback: route to first accessible safe point
-          const fallback = scenario.safePoints[0];
+          // Graceful fallback: route to nearest safe point
+          const distSq = (sp: { lng: number; lat: number }) => {
+            const dx = (sp.lng - guide.lng) * Math.cos((guide.lat * Math.PI) / 180);
+            const dy = sp.lat - guide.lat;
+            return dx * dx + dy * dy;
+          };
+          const fallback = [...scenario.safePoints].sort((a, b) => distSq(a) - distSq(b))[0];
           return fallback
-            ? ({ guideId: guide.id, targetSafePointId: fallback.id, reason: "AI unavailable — fallback" } satisfies GuideDecision)
+            ? ({ guideId: guide.id, targetSafePointId: fallback.id, reason: "AI unavailable — nearest fallback" } satisfies GuideDecision)
             : null;
         },
       ),
