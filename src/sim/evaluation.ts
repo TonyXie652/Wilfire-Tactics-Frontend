@@ -83,7 +83,7 @@ export function calculateMetrics(
     );
 
     // 撤离时间统计（基于 pathHistory 长度近似）
-    const evacuationTimes = safe.map((a) => a.pathHistory.length);
+    const evacuationTimes = safe.map((a) => a.pathHistory?.length ?? 0);
     const avgTime =
         evacuationTimes.length > 0
             ? evacuationTimes.reduce((s, t) => s + t, 0) / evacuationTimes.length

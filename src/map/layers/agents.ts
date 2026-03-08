@@ -3,28 +3,27 @@ import { ScatterplotLayer } from "@deck.gl/layers";
 import type { Layer } from "@deck.gl/core";
 import type { Agent } from "../../app/types";
 
-/** 引导员影响范围（米） — 和 agentEngine.ts 的 GUIDE_INFLUENCE_RADIUS 保持一致 */
-const GUIDE_INFLUENCE_RADIUS_METERS = 150;
+export type PickedGuide = {
+  agentId: string;
+  x: number;
+  y: number;
+};
 
 type Options = {
   selectedAgentId?: string | null;
-  onPickAgent?: (agentId: string) => void;
-  /** 双击引导员回调 */
-  onDoubleClickAgent?: (agentId: string) => void;
+  onPickAgent?: (pickedGuide: PickedGuide) => void;
   /** 当前时间戳，用来驱动脉冲动画 */
   timeMs?: number;
+  /** 地图上绘制的真实米制半径 */
+  guideInfluenceRadiusMeters?: number;
 };
-
-// 双击检测
-let lastClickId = "";
-let lastClickTime = 0;
 
 export function makeAgentsLayer(agents: Agent[], opts: Options = {}): Layer[] {
   const {
     selectedAgentId = null,
     onPickAgent,
-    onDoubleClickAgent,
     timeMs = 0,
+    guideInfluenceRadiusMeters = 150,
   } = opts;
 
   // ─── 颜色策略 ───
@@ -45,7 +44,7 @@ export function makeAgentsLayer(agents: Agent[], opts: Options = {}): Layer[] {
     data: guides,
     getPosition: (d) => [d.lng, d.lat, 2],
     radiusUnits: "meters",
-    getRadius: () => GUIDE_INFLUENCE_RADIUS_METERS,
+    getRadius: () => guideInfluenceRadiusMeters,
     radiusMinPixels: 20,
     filled: true,
     getFillColor: () => [16, 185, 129, 20],
@@ -65,7 +64,7 @@ export function makeAgentsLayer(agents: Agent[], opts: Options = {}): Layer[] {
     data: guides,
     getPosition: (d) => [d.lng, d.lat, 2],
     radiusUnits: "meters",
-    getRadius: () => GUIDE_INFLUENCE_RADIUS_METERS * (0.3 + 0.7 * pulseT),
+    getRadius: () => guideInfluenceRadiusMeters * (0.3 + 0.7 * pulseT),
     radiusMinPixels: 8,
     filled: false,
     stroked: true,
@@ -134,19 +133,11 @@ export function makeAgentsLayer(agents: Agent[], opts: Options = {}): Layer[] {
     onClick: (info: any) => {
       const obj = info.object as Agent | null;
       if (!obj) return;
-
-      const now = Date.now();
-      if (obj.id === lastClickId && now - lastClickTime < 400) {
-        // 双击 → 撤离对话框
-        onDoubleClickAgent?.(obj.id);
-        lastClickId = "";
-        lastClickTime = 0;
-      } else {
-        // 单击 → 选中/取消
-        onPickAgent?.(obj.id);
-        lastClickId = obj.id;
-        lastClickTime = now;
-      }
+      onPickAgent?.({
+        agentId: obj.id,
+        x: info.x ?? window.innerWidth / 2,
+        y: info.y ?? window.innerHeight / 2,
+      });
     },
   } as any);
 

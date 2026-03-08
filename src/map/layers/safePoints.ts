@@ -25,12 +25,12 @@ export function makeSafePointsLayer(
   safePoints: SafePoint[],
   opts: Options = {}
 ): Layer[] {
+  const safePointRadiusMeters = opts.radiusMeters ?? 30;
+  const safePointRingExtraMeters = opts.ringExtraMeters ?? safePointRadiusMeters * 3;
   const {
     selectedSafePointId = null,
     onPickSafePoint,
     timeMs = 0,
-    radiusMeters = 30,
-    ringExtraMeters = 90,
     ringPeriodMs = 1400,
   } = opts;
 
@@ -45,7 +45,7 @@ export function makeSafePointsLayer(
   const getRingRadius = (d: SafePoint) => {
     const phase = hash01(d.id) * 0.35;
     const tt = (t + phase) % 1;
-    return radiusMeters + ringExtraMeters * tt;
+    return safePointRadiusMeters + safePointRingExtraMeters * tt;
   };
 
   const getRingAlpha = (d: SafePoint) => {
@@ -82,7 +82,7 @@ export function makeSafePointsLayer(
     id: "safe-points-inner",
     data: safePoints,
     diskResolution: 32,
-    radius: radiusMeters,
+    radius: safePointRadiusMeters,
     extruded: true,
     pickable: true,
     elevationScale: 1,

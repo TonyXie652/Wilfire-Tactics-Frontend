@@ -3,12 +3,27 @@ import { useNavigate } from "react-router-dom";
 import { MapView } from "./map/MapView";
 import { makeRoadLayers } from "./map/layers/roads";
 import { makeAgentsLayer } from "./map/layers/agents";
+import type { PickedGuide } from "./map/layers/agents";
 import { makeFireLayer } from "./map/layers/fire";
 import { makeSafePointsLayer } from "./map/layers/safePoints";
 import { stepFireSpread } from "./stimulation/fireSpread";
-import { stepAgents, createResident, createGuide, resetEngineCache } from "./sim/agentEngine";
+import {
+  stepAgents,
+  createResident,
+  createGuide,
+  resetEngineCache,
+  GUIDE_INFLUENCE_RADIUS_M,
+  SAFE_ARRIVAL_RADIUS_M,
+} from "./sim/agentEngine";
 import { getGuideDecisions, resetGuideSessions } from "./sim/guideAgent";
-import { EvacuationDialog } from "./ui/EvacuationDialog";
+import {
+  clearDecisionLog,
+  getDecisionsByGuide,
+  logDecisions,
+} from "./sim/decisionLog";
+import { logicMetersToMapMeters } from "./sim/worldScale";
+import { GuideActionMenu } from "./ui/GuideActionMenu";
+import { GuideTrackerPanel } from "./ui/GuideTrackerPanel";
 import { Toolbar } from "./ui/Toolbar";
 import type { ToolType } from "./ui/Toolbar";
 import { StatsPanel } from "./ui/StatsPanel";
@@ -289,7 +304,7 @@ const scenario: Scenario = {
     { id: "e91", from: "n61", to: "n62" },
     { id: "e92", from: "n62", to: "n63" },
     { id: "e93", from: "n63", to: "n64" },
-    { id: "e93", from: "n64", to: "n67" },
+    { id: "e93b", from: "n64", to: "n67" },
     { id: "e94", from: "n35", to: "n36" },
     { id: "e95", from: "n36", to: "n63" },
     { id: "e96", from: "n23", to: "n65" },
@@ -423,30 +438,22 @@ const scenario: Scenario = {
   ],
 };
 
-// ─── 初始 Agent（散布在路网节点附近） ───
+// ─── 初始场景为空，所有元素由用户通过工具栏添加 ───
 
-const initialAgents: Agent[] = [
-  createResident("a1", -114.3698, 62.4578, 2),  // near n20
-  createResident("a2", -114.3681, 62.4578, 4),  // near n17
-  createResident("a3", -114.3656, 62.4567, 3),  // near n18
-  createGuide("g1", -114.3765, 62.4518),        // near n4
-];
+const initialAgents: Agent[] = [];
 
-const initialFire: FireCell[] = [
-  {
-    id: "fire-0",
-    position: [-114.3718, 62.454],
-    intensity: 1,
-    size: 80,
-    age: 0,
-    activatedAt: 0,
-  },
-];
+const initialFire: FireCell[] = [];
 
-const AI_DECISION_INTERVAL = 240;
+const SIM_TICK_INTERVAL_MS = 250;
+const AI_DECISION_INTERVAL = 8;
+const GUIDE_INFLUENCE_RADIUS_DISPLAY_M = logicMetersToMapMeters(GUIDE_INFLUENCE_RADIUS_M);
+const SAFE_ARRIVAL_RADIUS_DISPLAY_M = logicMetersToMapMeters(SAFE_ARRIVAL_RADIUS_M);
+const SAFE_POINT_RING_EXTRA_DISPLAY_M = SAFE_ARRIVAL_RADIUS_DISPLAY_M * 3;
 
-// 交互模式
-type InteractionMode = "idle" | "placing-guide" | "show-dialog";
+type GuideMenuState = {
+  guideId: string;
+  position: { x: number; y: number };
+};
 
 /** Point-to-segment distance in lng/lat units. */
 function pointToSegmentDist(
@@ -503,8 +510,9 @@ export default function App() {
   const [tick, setTick] = useState(0);
 
   // 交互状态
-  const [mode, setMode] = useState<InteractionMode>("idle");
   const [selectedGuideId, setSelectedGuideId] = useState<string | null>(null);
+  const [guideMenu, setGuideMenu] = useState<GuideMenuState | null>(null);
+  const [trackedGuideId, setTrackedGuideId] = useState<string | null>(null);
   const guideDecisionsRef = useRef<GuideDecision[]>([]);
   const agentsRef = useRef<Agent[]>(initialAgents);
   const fireCellsRef = useRef<FireCell[]>(initialFire);
@@ -512,6 +520,7 @@ export default function App() {
   const decisionRequestSeqRef = useRef(0);
   const decisionAppliedSeqRef = useRef(0);
   const decisionInFlightRef = useRef(false);
+  const ignoreNextMapClickRef = useRef(false);
 
   // 道路封堵状态
   const [blockedEdges, setBlockedEdges] = useState(() => new Set<string>());
@@ -577,7 +586,7 @@ export default function App() {
 
         return newTick;
       });
-    }, 33);
+    }, SIM_TICK_INTERVAL_MS);
     return () => window.clearInterval(timer);
   }, [isPaused]);
 
@@ -599,6 +608,9 @@ export default function App() {
         if (requestSeq < decisionAppliedSeqRef.current) return;
 
         decisionAppliedSeqRef.current = requestSeq;
+        if (decisions.length > 0) {
+          logDecisions(decisions, currentTick);
+        }
         // 即使为空也要覆盖，避免长期沿用陈旧决策
         guideDecisionsRef.current = decisions;
       } catch (err) {
@@ -612,30 +624,17 @@ export default function App() {
     []
   );
 
-  // ─── 单击 Agent（选中/取消选中） ───
-  const handlePickAgent = useCallback(
-    (agentId: string) => {
+  const handlePickGuide = useCallback(
+    ({ agentId, x, y }: PickedGuide) => {
       const agent = agents.find((a) => a.id === agentId);
       if (!agent || agent.kind !== "guide") return;
 
-      if (selectedGuideId === agentId) {
-        setSelectedGuideId(null);
-        setMode("idle");
-      } else {
-        setSelectedGuideId(agentId);
-        setMode("placing-guide");
-      }
-    },
-    [agents, selectedGuideId]
-  );
-
-  // ─── 双击 Agent（弹出撤离对话框） ───
-  const handleDoubleClickAgent = useCallback(
-    (agentId: string) => {
-      const agent = agents.find((a) => a.id === agentId);
-      if (!agent || agent.kind !== "guide") return;
+      ignoreNextMapClickRef.current = true;
       setSelectedGuideId(agentId);
-      setMode("show-dialog");
+      setGuideMenu({
+        guideId: agentId,
+        position: { x, y },
+      });
     },
     [agents]
   );
@@ -643,6 +642,11 @@ export default function App() {
   // ─── 点击地图空白处 ───
   const handleMapClick = useCallback(
     (lng: number, lat: number) => {
+      if (ignoreNextMapClickRef.current) {
+        ignoreNextMapClickRef.current = false;
+        return;
+      }
+
       // 工具栏放置
       if (activeTool !== "none") {
         if (activeTool === "resident") {
@@ -685,32 +689,18 @@ export default function App() {
         return;
       }
 
-      if (mode === "placing-guide" && selectedGuideId) {
-        setAgents((prev) =>
-          prev.map((a) =>
-            a.id === selectedGuideId
-              ? { ...a, lng, lat, path: [], pathIndex: 0 }
-              : a
-          )
-        );
-        console.log(`[App] 引导员 ${selectedGuideId} 移动到 [${lng.toFixed(4)}, ${lat.toFixed(4)}]`);
-      } else if (mode === "show-dialog") {
-        setMode("placing-guide");
-      } else {
-        setSelectedGuideId(null);
-        setMode("idle");
-      }
+      setGuideMenu(null);
+      setSelectedGuideId(trackedGuideId);
     },
-    [mode, selectedGuideId, activeTool, tick]
+    [activeTool, tick, trackedGuideId]
   );
 
   // ─── Esc 键取消选中 ───
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        setGuideMenu(null);
         setSelectedGuideId(null);
-        setMode("idle");
-        setIsPaused((p) => !p);
       }
       if (e.key === "Tab") {
         e.preventDefault();
@@ -726,17 +716,6 @@ export default function App() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  // ─── 确认撤离 ───
-  const handleEvacuationConfirm = useCallback(() => {
-    setIsPaused(false);
-    setMode("idle");
-    setSelectedGuideId(null);
-  }, []);
-
-  const handleEvacuationCancel = useCallback(() => {
-    setMode("placing-guide");
-  }, []);
-
   // ─── 重置 ───
   const handleReset = useCallback(() => {
     setIsPaused(true);
@@ -745,8 +724,9 @@ export default function App() {
     setAgents(initialAgents);
     fireCellsRef.current = initialFire;
     agentsRef.current = initialAgents;
-    setMode("idle");
     setSelectedGuideId(null);
+    setGuideMenu(null);
+    setTrackedGuideId(null);
     guideDecisionsRef.current = [];
     simulationEpochRef.current += 1;
     decisionRequestSeqRef.current = 0;
@@ -754,6 +734,7 @@ export default function App() {
     decisionInFlightRef.current = false;
     resetGuideSessions();
     resetEngineCache();
+    clearDecisionLog();
     blockedEdgesRef.current = new Set();
     setBlockedEdges(new Set());
   }, []);
@@ -775,6 +756,40 @@ export default function App() {
     return residents.every((a) => a.status === "safe" || a.status === "dead");
   }, [agents, tick]);
 
+  const trackedGuide = useMemo(
+    () => agents.find((a) => a.id === trackedGuideId && a.kind === "guide") ?? null,
+    [agents, trackedGuideId]
+  );
+
+  const trackedGuideDecisions = useMemo(
+    () => (trackedGuideId ? getDecisionsByGuide(trackedGuideId) : []),
+    [trackedGuideId, tick]
+  );
+
+  const handleTrackGuide = useCallback(() => {
+    if (!guideMenu) return;
+    setTrackedGuideId(guideMenu.guideId);
+    setSelectedGuideId(guideMenu.guideId);
+    setGuideMenu(null);
+  }, [guideMenu]);
+
+  const handleRemoveGuide = useCallback(() => {
+    if (!guideMenu) return;
+    const guideId = guideMenu.guideId;
+
+    setAgents((prev) => prev.filter((agent) => agent.id !== guideId));
+    guideDecisionsRef.current = guideDecisionsRef.current.filter(
+      (decision) => decision.guideId !== guideId
+    );
+
+    if (trackedGuideId === guideId) {
+      setTrackedGuideId(null);
+    }
+
+    setGuideMenu(null);
+    setSelectedGuideId(trackedGuideId === guideId ? null : trackedGuideId);
+  }, [guideMenu, trackedGuideId]);
+
 
   // ─── 构建图层 ───
   const layers = useMemo(() => {
@@ -787,18 +802,23 @@ export default function App() {
       ...makeAgentsLayer(agents, {
         timeMs,
         selectedAgentId: selectedGuideId,
-        onPickAgent: handlePickAgent,
-        onDoubleClickAgent: handleDoubleClickAgent,
+        onPickAgent: handlePickGuide,
+        guideInfluenceRadiusMeters: GUIDE_INFLUENCE_RADIUS_DISPLAY_M,
       }),
-      ...makeSafePointsLayer(scenario.safePoints, { timeMs }),
+      ...makeSafePointsLayer(scenario.safePoints, {
+        timeMs,
+        radiusMeters: SAFE_ARRIVAL_RADIUS_DISPLAY_M,
+        ringExtraMeters: SAFE_POINT_RING_EXTRA_DISPLAY_M,
+      }),
     ];
-  }, [timeMs, fireCells, agents, selectedGuideId, handlePickAgent, blockedEdges]);
+  }, [timeMs, fireCells, agents, selectedGuideId, handlePickGuide, blockedEdges]);
 
   // ─── 提示文字 ───
   const hintText = (() => {
     if (!isPaused) return null;
-    if (mode === "placing-guide") return "👆 点击地图放置引导员，双击引导员确认撤离";
-    return "👆 点击绿色引导员开始";
+    if (guideMenu) return "👆 选择移除或追踪当前 Guide";
+    if (trackedGuideId) return `👁 正在追踪 ${trackedGuideId}`;
+    return "👆 先用右侧工具栏添加 Fire、Guide 或 Residents";
   })();
 
   return (
@@ -819,12 +839,26 @@ export default function App() {
           hintText={hintText}
         />
 
-        {mode === "show-dialog" && selectedGuideId && (
-          <EvacuationDialog
-            guideId={selectedGuideId}
-            position={{ x: window.innerWidth / 2, y: window.innerHeight / 2 - 50 }}
-            onConfirm={handleEvacuationConfirm}
-            onCancel={handleEvacuationCancel}
+        <GuideTrackerPanel
+          guide={trackedGuide}
+          decisions={trackedGuideDecisions}
+          onClose={() => {
+            setTrackedGuideId(null);
+            setSelectedGuideId(guideMenu?.guideId ?? null);
+          }}
+        />
+
+        {guideMenu && (
+          <GuideActionMenu
+            guideId={guideMenu.guideId}
+            isTracked={trackedGuideId === guideMenu.guideId}
+            position={guideMenu.position}
+            onTrack={handleTrackGuide}
+            onRemove={handleRemoveGuide}
+            onClose={() => {
+              setGuideMenu(null);
+              setSelectedGuideId(trackedGuideId);
+            }}
           />
         )}
 

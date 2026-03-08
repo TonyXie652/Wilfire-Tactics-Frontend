@@ -35,7 +35,7 @@ export type Agent = {
   status?: AgentStatus;
 
   // ── movement ──────────────────────────────────────────────────────────────
-  speed?: number;           // lng/lat units per tick (≈ 4m/tick for resident)
+  speed?: number;           // scaled simulation metres per tick
   currentNodeId?: string;   // road-graph node the agent is currently at / heading to
 
   // planned path ahead (used for visualisation; populated from flow field)

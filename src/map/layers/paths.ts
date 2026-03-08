@@ -6,14 +6,19 @@ export function makePathsLayer(agents: Agent[], nodes: Scenario["nodes"]): Layer
     const nodeMap = new Map(nodes.map((n) => [n.id, n] as const));
 
     // 只要状态是 moving，且有路径的 agent
-    const movingAgents = agents.filter((a) => a.status === "moving" && a.path.length > 0);
+    const movingAgents = agents.filter(
+        (a) => a.status === "moving" && (a.path?.length ?? 0) > 0
+    );
 
     const pathData = movingAgents.map((agent) => {
+        const path = agent.path ?? [];
+        const startIndex = agent.pathIndex ?? 0;
         // 路径坐标：从 agent 当前位置开始，连接剩余的所有目标节点
         const coords: [number, number][] = [[agent.lng, agent.lat]];
 
-        for (let i = agent.pathIndex; i < agent.path.length; i++) {
-            const node = nodeMap.get(agent.path[i]);
+        for (let i = startIndex; i < path.length; i += 1) {
+            const nodeId = path[i];
+            const node = nodeId ? nodeMap.get(nodeId) : undefined;
             if (node) {
                 coords.push([node.lng, node.lat]);
             }

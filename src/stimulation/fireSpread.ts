@@ -1,4 +1,5 @@
 import type { FireCell, WindConfig } from "../app/types";
+import { haversine } from "../sim/pathfinding";
 
 /** Line segment intersection test (2D). */
 function segmentsIntersect(
@@ -18,39 +19,57 @@ function segmentsIntersect(
 const MAX_INTENSITY = 4;
 const SPREAD_THRESHOLD = 2;
 
-const LNG_STEP = 0.00105;
-const LAT_STEP = 0.00055;
-const MIN_DISTANCE_THRESHOLD = 0.0006;
-
 // --- 节奏平衡配置 ---
-const BASE_GROWTH_CHANCE = 0.2;
+const BASE_GROWTH_CHANCE = 0.04;
 
 /**
  * Spread chance per tick. At intensity 2: 30%, intensity 3: 60%, intensity 4: 90%.
  * Reduced from 0.6 so high-intensity fire doesn't guarantee spread every tick.
  */
-const BASE_SPREAD_CHANCE = 0.3;
+const BASE_SPREAD_CHANCE = 0.045;
 
 /**
  * Ticks before a cell starts decaying. At 1s/tick this is ~20 seconds of burning.
  * After this age, the cell loses intensity instead of gaining it.
  */
-const BURNOUT_AGE = 20;
+const BURNOUT_AGE = 180;
 
 /**
  * Probability per tick that a burning-out cell loses 1 intensity level.
  */
-const BASE_DECAY_CHANCE = 0.2;
+const BASE_DECAY_CHANCE = 0.03;
+
+/** Minimum fire age before external spread starts. */
+const SPREAD_START_AGE_TICKS = 12;
+
+/** Real map metres for one outward spread step. */
+const FIRE_SPREAD_STEP_METERS = 16;
+
+/** Randomized jitter so new cells do not form a perfect grid. */
+const FIRE_SPREAD_JITTER_METERS = 2;
+
+/** Minimum spacing between fire cells, in real map metres. */
+const MIN_DISTANCE_THRESHOLD_METERS = 12;
 
 const DIRECTIONS = [
   [1, 0], [-1, 0], [0, 1], [0, -1],
   [1, 1], [1, -1], [-1, 1], [-1, -1]
 ];
 
-function getDist(p1: [number, number], p2: [number, number]): number {
-  const dx = p1[0] - p2[0];
-  const dy = p1[1] - p2[1];
-  return Math.sqrt(dx * dx + dy * dy);
+function getDistMeters(p1: [number, number], p2: [number, number]): number {
+  return haversine(p1[0], p1[1], p2[0], p2[1]);
+}
+
+function offsetLngLat(
+  lng: number,
+  lat: number,
+  eastMeters: number,
+  northMeters: number,
+): [number, number] {
+  const latRad = (lat * Math.PI) / 180;
+  const dLat = northMeters / 111_320;
+  const dLng = eastMeters / (111_320 * Math.max(Math.cos(latRad), 0.0001));
+  return [lng + dLng, lat + dLat];
 }
 
 /** Fire spread probability multiplier when crossing a roadblock. */
@@ -89,7 +108,7 @@ export function stepFireSpread(
   // 2. 外部扩散逻辑 (快节奏占地)
   for (const cell of activeCells) {
     // 【调整】：蔓延冷却期改为 2 秒，稍微比之前快一点，配合较高的生长率
-    if (cell.intensity < SPREAD_THRESHOLD || (cell.age ?? 0) < 2) continue;
+    if (cell.intensity < SPREAD_THRESHOLD || (cell.age ?? 0) < SPREAD_START_AGE_TICKS) continue;
 
     // 扩散概率随强度增长，但基数变大
     // 强度 2: 9% | 强度 3: 18% | 强度 4: 27% (大火扩散非常猛)
@@ -121,10 +140,12 @@ export function stepFireSpread(
 
     if (Math.random() > finalSpreadChance) continue;
 
-    const neighborPos: [number, number] = [
-      cell.position[0] + dir[0] * LNG_STEP * 0.65,
-      cell.position[1] + dir[1] * LAT_STEP * 0.65
-    ];
+    const neighborPos = offsetLngLat(
+      cell.position[0],
+      cell.position[1],
+      dir[0] * FIRE_SPREAD_STEP_METERS,
+      dir[1] * FIRE_SPREAD_STEP_METERS,
+    );
 
     // Check if this spread crosses a roadblock — if so, greatly reduce chance
     if (blockedSegments.length > 0) {
@@ -134,15 +155,16 @@ export function stepFireSpread(
       if (crossesBlock && Math.random() > ROADBLOCK_FIRE_PENALTY) continue;
     }
 
-    const jitter = 0.02; // 极小的 jitter 偏差，完全杜绝越出圆圈
-    const finalPos: [number, number] = [
-      neighborPos[0] + (Math.random() - 0.5) * LNG_STEP * jitter,
-      neighborPos[1] + (Math.random() - 0.5) * LAT_STEP * jitter
-    ];
+    const finalPos = offsetLngLat(
+      neighborPos[0],
+      neighborPos[1],
+      (Math.random() - 0.5) * FIRE_SPREAD_JITTER_METERS * 2,
+      (Math.random() - 0.5) * FIRE_SPREAD_JITTER_METERS * 2,
+    );
 
     // 空间检查
     const isTooCrowded = nextFireList.some(existing =>
-      getDist(existing.position, finalPos) < MIN_DISTANCE_THRESHOLD
+      getDistMeters(existing.position, finalPos) < MIN_DISTANCE_THRESHOLD_METERS
     );
 
     if (!isTooCrowded) {

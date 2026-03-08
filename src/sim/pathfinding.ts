@@ -2,11 +2,12 @@
 // Road-network pathfinding: A* (single agent) + Flow Fields (multi-agent)
 //
 // Unit discipline:
-//   - All edge costs and penalty values are in METRES (via Haversine).
+//   - All edge costs and penalty values are in SCALED METRES.
 //   - simpleDistance() is used only where a fast ordering proxy is acceptable
 //     (nearest-node snap) — never for cost computation.
 
 import type { Node, Edge, Scenario, SafePoint, FireCell } from "../app/types";
+import { scaleMeters } from "./worldScale";
 
 /* ─────────────────────────────────────────────────────────────────────────────
    Graph types
@@ -30,7 +31,9 @@ export function buildGraph(scenario: Scenario): Graph {
     const a = nodeMap.get(edge.from);
     const b = nodeMap.get(edge.to);
     if (!a || !b) continue;
-    const cost = edge.baseCost ?? haversine(a.lng, a.lat, b.lng, b.lat);
+    const cost = edge.baseCost !== undefined
+      ? scaleMeters(edge.baseCost)
+      : scaledHaversine(a.lng, a.lat, b.lng, b.lat);
     graph.get(edge.from)!.push({ to: edge.to, edgeId: edge.id, cost });
     graph.get(edge.to)!.push({ to: edge.from, edgeId: edge.id, cost });
   }
@@ -54,6 +57,16 @@ export function haversine(
     Math.sin(dLat / 2) ** 2 +
     Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+/** Haversine distance in scaled simulation metres. */
+export function scaledHaversine(
+  lng1: number,
+  lat1: number,
+  lng2: number,
+  lat2: number,
+): number {
+  return scaleMeters(haversine(lng1, lat1, lng2, lat2));
 }
 
 /** Fast Euclidean proxy — lng/lat units.  Only for ordering / nearest-snap. */
@@ -88,7 +101,7 @@ export function findNearestNode(
   return best;
 }
 
-/** Find the safe point nearest to a given road node (Haversine). */
+/** Find the safe point nearest to a given road node (scaled metres). */
 export function findNearestSafePoint(
   nodeId: string,
   safePoints: SafePoint[],
@@ -99,7 +112,7 @@ export function findNearestSafePoint(
   let best: SafePoint | null = null;
   let bestD = Infinity;
   for (const sp of safePoints) {
-    const d = haversine(node.lng, node.lat, sp.lng, sp.lat);
+    const d = scaledHaversine(node.lng, node.lat, sp.lng, sp.lat);
     if (d < bestD) { bestD = d; best = sp; }
   }
   return best;
@@ -109,11 +122,11 @@ export function findNearestSafePoint(
    Fire penalty  (all in metres — consistent with edge costs)
 ───────────────────────────────────────────────────────────────────────────── */
 
-/** Metres within which fire affects path cost. */
+/** Scaled metres within which fire affects path cost. */
 const FIRE_DANGER_RADIUS_M = 200;
 
 /**
- * Extra metres of cost added per unit of intensity when a node is at the
+ * Extra scaled metres of cost added per unit of intensity when a node is at the
  * inner edge of the danger radius (distance → 0).  Scales linearly with
  * (1 − dist/radius) × intensity.
  */
@@ -123,7 +136,7 @@ const FIRE_PENALTY_MULTIPLIER = 500;
 const FIRE_BLOCK_INTENSITY = 3;
 
 /**
- * Returns the additional path cost (metres) for passing through a node near
+ * Returns the additional path cost (scaled metres) for passing through a node near
  * fire.  Returns Infinity if the node is inside intense fire.
  */
 export function firePenalty(
@@ -134,7 +147,7 @@ export function firePenalty(
   let penalty = 0;
   for (const cell of fireCells) {
     const [fLng, fLat] = cell.position;
-    const distM = haversine(nodeLng, nodeLat, fLng, fLat);
+    const distM = scaledHaversine(nodeLng, nodeLat, fLng, fLat);
     if (distM >= FIRE_DANGER_RADIUS_M) continue;
 
     if (cell.intensity >= FIRE_BLOCK_INTENSITY) return Infinity;
@@ -228,7 +241,7 @@ export function astar(
 
   const h = (id: string): number => {
     const n = nodeMap.get(id);
-    return n ? haversine(n.lng, n.lat, goalNode.lng, goalNode.lat) : Infinity;
+    return n ? scaledHaversine(n.lng, n.lat, goalNode.lng, goalNode.lat) : Infinity;
   };
 
   type Entry = { id: string; f: number };

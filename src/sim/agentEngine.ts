@@ -4,7 +4,7 @@
 // Key design choices vs. earlier version:
 //  • Movement uses Flow Fields (one Dijkstra per safe-point per repath window)
 //    instead of per-agent A*.  Much cheaper at scale.
-//  • All distance thresholds are in METRES (Haversine), not raw lng/lat.
+//  • All distance thresholds and movement speeds are in SCALED METRES.
 //  • Panic no longer moves agents through buildings; it boosts speed and
 //    forces an immediate repath — the road network still constrains movement.
 //  • willFollowGuide is re-evaluated dynamically based on fire proximity,
@@ -18,11 +18,12 @@ import {
   pathFromFlowField,
   findNearestNode,
   findNearestSafePoint,
-  haversine,
+  scaledHaversine,
   firePenalty,
   type Graph,
   type FlowField,
 } from "./pathfinding";
+export { WORLD_SCALE } from "./worldScale";
 
 /* ─────────────────────────────────────────────────────────────────────────────
    Constants  (all distances in metres unless noted)
@@ -36,10 +37,8 @@ import {
  * being compared against the _M constants below, so those constants remain
  * meaningful as "virtual metres" in the scaled world.
  */
-export const WORLD_SCALE = 4;
-
 /** Metres within which a guide can influence nearby residents. */
-const GUIDE_INFLUENCE_RADIUS_M = 150;
+export const GUIDE_INFLUENCE_RADIUS_M = 150;
 
 /** Base probability a resident decides to follow a nearby guide (0–1). */
 const FOLLOW_BASE_CHANCE = 0.6;
@@ -57,7 +56,7 @@ const FIRE_VISIBLE_RADIUS_M = 700;
 const FIRE_KILL_RADIUS_M = 20;
 
 /** Metres from a safe point that counts as "arrived". */
-const SAFE_ARRIVAL_RADIUS_M = 60;
+export const SAFE_ARRIVAL_RADIUS_M = 60;
 
 /** Ticks between flow-field recomputes. */
 const REPATH_INTERVAL = 8;
@@ -65,11 +64,11 @@ const REPATH_INTERVAL = 8;
 /** Max trail history entries per agent. */
 const MAX_PATH_HISTORY = 200;
 
-/** lng/lat per tick for a resident walking (~3–4 m/tick at ~1 s/tick). */
-export const DEFAULT_RESIDENT_SPEED = 0.000035;
+/** Scaled metres per tick for a resident moving at a brisk real-world pace. */
+export const DEFAULT_RESIDENT_SPEED = 1.8;
 
 /** Guides move slightly faster than residents. */
-export const DEFAULT_GUIDE_SPEED = 0.000045;
+export const DEFAULT_GUIDE_SPEED = 2.3;
 
 /** Speed multiplier applied during panic. */
 const PANIC_SPEED_MULTIPLIER = 1.6;
@@ -96,9 +95,9 @@ export function resetEngineCache(): void {
   flowFieldCache.clear();
 }
 
-/** Haversine distance scaled to the virtual world size. */
+/** Haversine distance in scaled simulation metres. */
 function scaledDist(lng1: number, lat1: number, lng2: number, lat2: number): number {
-  return haversine(lng1, lat1, lng2, lat2) * WORLD_SCALE;
+  return scaledHaversine(lng1, lat1, lng2, lat2);
 }
 
 function getGraph(scenario: Scenario): Graph {
@@ -448,18 +447,25 @@ function moveViaFlowField(
   const nextNode = nodeMap.get(nextNodeId);
   if (!nextNode) return;
 
-  const dlng = nextNode.lng - agent.lng;
-  const dlat = nextNode.lat - agent.lat;
-  const distDeg = Math.sqrt(dlng * dlng + dlat * dlat);
+  const distM = scaledDist(agent.lng, agent.lat, nextNode.lng, nextNode.lat);
+  if (distM <= 0) {
+    agent.lng = nextNode.lng;
+    agent.lat = nextNode.lat;
+    agent.currentNodeId = nextNodeId;
+    agent.path = pathFromFlowField(agent.currentNodeId, field, 5);
+    agent.pathIndex = 0;
+    return;
+  }
 
-  if (distDeg <= speed) {
+  if (distM <= speed) {
     // Snap to node and advance current node pointer
     agent.lng = nextNode.lng;
     agent.lat = nextNode.lat;
     agent.currentNodeId = nextNodeId;
   } else {
-    agent.lng += (dlng / distDeg) * speed;
-    agent.lat += (dlat / distDeg) * speed;
+    const ratio = speed / distM;
+    agent.lng += (nextNode.lng - agent.lng) * ratio;
+    agent.lat += (nextNode.lat - agent.lat) * ratio;
   }
 
   // Refresh short lookahead path for visualisation (5-step preview)
